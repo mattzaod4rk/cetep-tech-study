@@ -117,74 +117,144 @@ export default function DashboardPage() {
       )}
 
       {/* ─── Stats ───────────────────────────────── */}
-      <div className="grid-4 mb-24" style={{ marginBottom: 24 }}>
+      <div className="grid-4 mb-32">
         {[
           {
-            icon: <Target size={20} />,
+            icon: <Clock size={22} />,
+            label: 'Tempo estudado',
+            value: formatMinutes(stats?.totalMinutesThisWeek || 0),
+            sub: 'acumulado esta semana',
+            color: 'hsl(224, 76%, 50%)',
+            bg: 'hsl(224, 85%, 96%)',
+            featured: true,
+            badge: 'Principal',
+          },
+          {
+            icon: <Target size={22} />,
             label: 'Tarefas concluídas',
             value: stats?.completedThisWeek || 0,
             sub: 'nesta semana',
-            color: 'hsl(220, 80%, 55%)',
-            bg: 'hsl(220, 80%, 95%)',
-          },
-          {
-            icon: <Clock size={20} />,
-            label: 'Tempo estudado',
-            value: formatMinutes(stats?.totalMinutesThisWeek || 0),
-            sub: 'nesta semana',
-            color: 'hsl(142, 70%, 38%)',
-            bg: 'hsl(142, 60%, 92%)',
+            color: 'hsl(145, 68%, 38%)',
+            bg: 'hsl(145, 60%, 93%)',
+            featured: true,
+            badge: 'Meta',
           },
           {
             icon: <Timer size={20} />,
             label: 'Sessões de foco',
             value: stats?.focusSessionsThisWeek || 0,
             sub: 'nesta semana',
-            color: 'hsl(38, 90%, 45%)',
-            bg: 'hsl(38, 90%, 93%)',
+            color: 'hsl(38, 92%, 46%)',
+            bg: 'hsl(38, 90%, 94%)',
+            featured: false,
           },
           {
             icon: <Zap size={20} />,
-            label: 'Pontos',
+            label: 'Pontuação total',
             value: gamification?.points || 0,
-            sub: gamification?.levelInfo?.title || 'Iniciante',
+            sub: `Nível ${gamification?.levelInfo?.level || 1} · ${gamification?.levelInfo?.title || 'Iniciante'}`,
             color: 'hsl(280, 70%, 55%)',
-            bg: 'hsl(280, 70%, 93%)',
+            bg: 'hsl(280, 70%, 94%)',
+            featured: false,
           },
         ].map((s, i) => (
-          <div key={i} className="stat-card">
-            <div className="stat-card-icon" style={{ background: s.bg, color: s.color }}>{s.icon}</div>
-            <div className="stat-label">{s.label}</div>
-            <div className="stat-value">{s.value}</div>
-            <div className="stat-sub">{s.sub}</div>
+          <div key={i} className={`stat-card ${s.featured ? 'stat-card-featured' : ''}`}>
+            <div className="flex items-center justify-between" style={{ width: '100%' }}>
+              <div className="stat-card-icon" style={{ background: s.bg, color: s.color, borderColor: s.color }}>
+                {s.icon}
+              </div>
+              {s.badge && (
+                <span className="badge badge-primary" style={{ fontSize: '0.7rem', padding: '2px 8px' }}>
+                  {s.badge}
+                </span>
+              )}
+            </div>
+            <div>
+              <div className="stat-label">{s.label}</div>
+              <div className="stat-value" style={s.featured ? { color: s.color } : {}}>{s.value}</div>
+              <div className="stat-sub">{s.sub}</div>
+            </div>
           </div>
         ))}
       </div>
 
       {/* ─── Action Buttons ───────────────────────── */}
-      <div style={{ marginBottom: 28 }}>
-        <h3 style={{ marginBottom: 14 }}>Ações rápidas</h3>
-        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+      <div style={{ marginBottom: 36 }}>
+        <h3 style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{
+            width: 28, height: 28, borderRadius: 8,
+            background: 'var(--color-primary-light)', color: 'var(--color-primary)',
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: '0.85rem'
+          }}>⚡</span>
+          Ações rápidas
+        </h3>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14 }}>
           {[
-            { label: 'Nova tarefa', icon: <Plus size={18} />, action: () => setShowTaskModal(true), id: 'quick-new-task' },
-            { label: 'Agenda', icon: <Calendar size={18} />, action: () => navigate('/agenda'), id: 'quick-agenda' },
-            { label: 'Modo Foco', icon: <Timer size={18} />, action: () => navigate('/focus'), id: 'quick-focus' },
-            { label: 'Resumir texto', icon: <FileText size={18} />, action: () => setShowSummarize(true), id: 'quick-summarize' },
+            { label: 'Nova tarefa', desc: 'Criar e organizar tarefas', icon: <Plus size={20} />, action: () => setShowTaskModal(true), id: 'quick-new-task', color: 'hsl(224, 76%, 50%)', bg: 'hsl(224, 85%, 96%)' },
+            { label: 'Agenda', desc: 'Ver provas e eventos', icon: <Calendar size={20} />, action: () => navigate('/agenda'), id: 'quick-agenda', color: 'hsl(145, 68%, 38%)', bg: 'hsl(145, 60%, 93%)' },
+            { label: 'Modo Foco', desc: 'Iniciar sessão pomodoro', icon: <Timer size={20} />, action: () => navigate('/focus'), id: 'quick-focus', color: 'hsl(38, 92%, 46%)', bg: 'hsl(38, 90%, 94%)' },
+            { label: 'Resumir texto', desc: 'Extrair tópicos de texto', icon: <FileText size={20} />, action: () => setShowSummarize(true), id: 'quick-summarize', color: 'hsl(280, 70%, 55%)', bg: 'hsl(280, 70%, 94%)' },
           ].map(btn => (
-            <button key={btn.id} id={btn.id} className="btn btn-secondary" onClick={btn.action}>
-              {btn.icon} {btn.label}
+            <button
+              key={btn.id}
+              id={btn.id}
+              className="card card-flat"
+              onClick={btn.action}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 14,
+                padding: '16px 18px',
+                textAlign: 'left',
+                cursor: 'pointer',
+                transition: 'all 0.18s cubic-bezier(0.16, 1, 0.3, 1)',
+                border: '1px solid var(--color-border)',
+                background: 'var(--color-bg-card)',
+              }}
+              onMouseEnter={e => {
+                e.currentTarget.style.borderColor = btn.color;
+                e.currentTarget.style.transform = 'translateY(-2px)';
+                e.currentTarget.style.boxShadow = 'var(--shadow-md)';
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.borderColor = 'var(--color-border)';
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.boxShadow = 'none';
+              }}
+            >
+              <div style={{
+                width: 42, height: 42, borderRadius: 12,
+                background: btn.bg, color: btn.color,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                flexShrink: 0,
+                border: `1px solid ${btn.color}33`,
+              }}>
+                {btn.icon}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--color-text)', marginBottom: 2 }}>{btn.label}</div>
+                <div style={{ fontSize: '0.78rem', color: 'var(--color-text-secondary)' }}>{btn.desc}</div>
+              </div>
             </button>
           ))}
         </div>
       </div>
 
       {/* ─── Today's Tasks + Upcoming Events ────── */}
-      <div className="grid-2" style={{ gap: 20 }}>
+      <div className="grid-2" style={{ gap: 28 }}>
         {/* Today's tasks */}
         <div>
-          <div className="flex items-center justify-between mb-12">
+          <div className="flex items-center justify-between mb-16">
             <h3 className="flex items-center gap-8">
-              <CheckSquare size={18} className="text-primary" /> Tarefas de hoje
+              <span style={{
+                width: 28, height: 28, borderRadius: 8,
+                background: 'hsl(145, 60%, 93%)', color: 'hsl(145, 68%, 38%)',
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center'
+              }}>
+                <CheckSquare size={16} />
+              </span>
+              Tarefas de hoje
             </h3>
             <button className="btn btn-ghost btn-sm" onClick={() => navigate('/tasks')}>
               Ver todas <ChevronRight size={14} />
@@ -247,9 +317,16 @@ export default function DashboardPage() {
 
         {/* Upcoming events */}
         <div>
-          <div className="flex items-center justify-between mb-12">
+          <div className="flex items-center justify-between mb-16">
             <h3 className="flex items-center gap-8">
-              <Calendar size={18} className="text-primary" /> Próximos eventos
+              <span style={{
+                width: 28, height: 28, borderRadius: 8,
+                background: 'var(--color-primary-light)', color: 'var(--color-primary)',
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center'
+              }}>
+                <Calendar size={16} />
+              </span>
+              Próximos eventos
             </h3>
             <button className="btn btn-ghost btn-sm" onClick={() => navigate('/agenda')}>
               Ver agenda <ChevronRight size={14} />
