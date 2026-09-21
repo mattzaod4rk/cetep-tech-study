@@ -1,0 +1,399 @@
+import os
+import subprocess
+
+html_content = '''<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Atividade - CETEP Tech Study - AEE</title>
+<style>
+  @page {
+    size: A4 portrait;
+    margin: 10mm 14mm 10mm 14mm;
+  }
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+  body {
+    font-family: Arial, "Helvetica Neue", Helvetica, sans-serif;
+    font-size: 9.5pt;
+    line-height: 1.3;
+    color: #000000;
+    background: #ffffff;
+  }
+
+  /* ── Header Box (Exact Template Match) ── */
+  .header-box {
+    border: 1.8px solid #000000;
+    padding: 6px 10px;
+    margin-bottom: 10px;
+  }
+  .header-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .header-logo-cell {
+    width: 75px;
+    vertical-align: middle;
+    text-align: center;
+    padding-right: 10px;
+    border-right: 1.5px solid #000000;
+  }
+  .header-content-cell {
+    padding-left: 12px;
+    vertical-align: middle;
+  }
+  .school-title {
+    text-align: center;
+    font-size: 11pt;
+    font-weight: bold;
+    text-transform: uppercase;
+    line-height: 1.2;
+    margin-bottom: 6px;
+    letter-spacing: 0.01em;
+  }
+  .header-fields-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 9pt;
+  }
+  .header-fields-table td {
+    padding: 1.5px 0;
+  }
+
+  /* ── Title & Orientations ── */
+  .activity-title {
+    text-align: center;
+    font-size: 11pt;
+    font-weight: bold;
+    text-transform: uppercase;
+    text-decoration: underline;
+    margin-bottom: 8px;
+    letter-spacing: 0.02em;
+  }
+  .orientations-box {
+    margin-bottom: 8px;
+    font-size: 8.5pt;
+    line-height: 1.25;
+  }
+  .orientations-box strong {
+    font-size: 9pt;
+  }
+
+  /* ── Reading Text Box ── */
+  .reading-box {
+    background-color: #fafafa;
+    border: 1px solid #c0c0c0;
+    border-left: 3.5px solid #000000;
+    padding: 6px 10px;
+    margin-bottom: 10px;
+    font-size: 8.8pt;
+    line-height: 1.3;
+  }
+  .reading-box h3 {
+    font-size: 9pt;
+    font-weight: bold;
+    text-transform: uppercase;
+    margin-bottom: 3px;
+  }
+
+  /* ── Questions ── */
+  .question-item {
+    margin-bottom: 9px;
+    page-break-inside: avoid;
+    font-size: 9pt;
+  }
+  .question-title {
+    font-weight: bold;
+    text-transform: uppercase;
+    margin-bottom: 2px;
+    font-size: 9.2pt;
+  }
+  .question-desc {
+    margin-bottom: 3px;
+    line-height: 1.25;
+  }
+  .options-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-left: 4px;
+  }
+  .options-table td {
+    padding: 1.5px 0;
+    vertical-align: top;
+    font-size: 8.8pt;
+    line-height: 1.25;
+  }
+  .opt-mark {
+    width: 42px;
+    font-weight: bold;
+    white-space: nowrap;
+  }
+
+  /* ── Answer Lines (for written responses) ── */
+  .answer-line {
+    border-bottom: 1px solid #777777;
+    height: 18px;
+    width: 100%;
+    margin-top: 1px;
+  }
+  .answer-line-prompt {
+    font-size: 8.8pt;
+    margin-top: 3px;
+    margin-bottom: 1px;
+  }
+
+  /* ── Association Table ── */
+  .assoc-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 3px;
+  }
+  .assoc-table td {
+    vertical-align: top;
+    padding: 1.5px 4px;
+    font-size: 8.8pt;
+    line-height: 1.25;
+  }
+  .assoc-col-left {
+    width: 36%;
+  }
+  .assoc-col-right {
+    width: 64%;
+  }
+
+  /* ── Page Break Helper ── */
+  .page-break {
+    page-break-before: always;
+  }
+</style>
+</head>
+<body>
+
+  <!-- ══════════════════════════════════════════════ HEADER ══════════════════════════════════════════════ -->
+  <div class="header-box">
+    <table class="header-table">
+      <tr>
+        <td class="header-logo-cell">
+          <!-- Logo CETEP Alberto Torres -->
+          <svg width="66" height="66" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="50" cy="50" r="46" fill="none" stroke="#b22222" stroke-width="2.5"/>
+            <path d="M 22 50 Q 50 16 78 50 Q 50 84 22 50" fill="none" stroke="#2e8b57" stroke-width="2"/>
+            <text x="50" y="35" font-size="10.5" font-family="Arial" font-weight="bold" fill="#b22222" text-anchor="middle">CETEP</text>
+            <text x="50" y="46" font-size="5.8" font-family="Arial" font-weight="bold" fill="#111111" text-anchor="middle">RECÔNCAVO II</text>
+            <text x="50" y="55" font-size="6.2" font-family="Arial" font-weight="bold" fill="#111111" text-anchor="middle">ALBERTO TORRES</text>
+            <text x="50" y="66" font-size="4.8" font-family="Arial" fill="#555555" text-anchor="middle">Cruz das Almas - BA</text>
+            <text x="50" y="75" font-size="4.8" font-family="Arial" font-weight="bold" fill="#b22222" text-anchor="middle">Desde 1948</text>
+          </svg>
+        </td>
+        <td class="header-content-cell">
+          <div class="school-title">
+            CENTRO TERRITORIAL DE EDUCAÇÃO PROFISSIONAL<br>
+            RECÔNCAVO II ALBERTO TORRES
+          </div>
+          <table class="header-fields-table">
+            <tr>
+              <td colspan="2">
+                <strong>Estudante:</strong> __________________________________________________
+              </td>
+              <td style="text-align: right;">
+                <strong>Data:</strong> ______________
+              </td>
+            </tr>
+            <tr>
+              <td><strong>Curso:</strong> Técnico em Informática</td>
+              <td><strong>Série:</strong> 2º ano</td>
+              <td style="text-align: right;"><strong>Turno:</strong> Matutino</td>
+            </tr>
+            <tr>
+              <td colspan="2"><strong>Disciplina:</strong> Atend. Educacional Especializado (AEE)</td>
+              <td style="text-align: right;"><strong>Prof. (a):</strong> _________________</td>
+            </tr>
+            <tr>
+              <td colspan="3">
+                <strong>Valor:</strong> 2,0 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; <strong>Nota:</strong> _________
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </div>
+
+  <!-- ══════════════════════════════════════════════ TITLE & ORIENTATIONS ══════════════════════════════════════════════ -->
+  <div class="activity-title">ATIVIDADE - CETEP TECH STUDY E ROTINA DE ESTUDOS</div>
+
+  <div class="orientations-box">
+    <strong>Orientações:</strong>
+    <p>• Leia atentamente o texto de apoio sobre a plataforma digital de apoio aos estudos do CETEP.</p>
+    <p>• Responda às questões com caneta azul ou preta, ou a lápis com clareza.</p>
+    <p>• Faça a atividade com calma no seu próprio ritmo. Em caso de dúvidas, peça orientação ao(à) professor(a).</p>
+  </div>
+
+  <!-- ══════════════════════════════════════════════ READING TEXT ══════════════════════════════════════════════ -->
+  <div class="reading-box">
+    <h3>Texto de Apoio: Conhecendo o CETEP Tech Study</h3>
+    <p>
+      O <strong>CETEP Tech Study</strong> é uma plataforma web criada para auxiliar a rotina dos alunos do curso <strong>Técnico em Informática do CETEP Alberto Torres</strong>. Desenvolvido com foco em acessibilidade para estudantes com TDAH, TEA e baixa visão, o sistema organiza os estudos práticos (<em>Algoritmos, Redes, Hardware e Banco de Dados</em>) através de: <strong>Tarefas com Subtarefas</strong> (dividindo grandes trabalhos em etapas), <strong>Modo Foco</strong> (temporizador sem distrações), <strong>Agenda</strong> com lembretes de provas, <strong>Gamificação</strong> (pontos e troféus por constância) e <strong>Ajustes de Acessibilidade</strong> (letras grandes, modo escuro e alto contraste).
+    </p>
+  </div>
+
+  <!-- ══════════════════════════════════════════════ QUESTIONS (PAGE 1: Q1 to Q5) ══════════════════════════════════════════════ -->
+
+  <!-- QUESTÃO 1 -->
+  <div class="question-item">
+    <div class="question-title">QUESTÃO 1 – OBJETIVO DA PLATAFORMA</div>
+    <div class="question-desc">Qual é a principal finalidade da plataforma CETEP Tech Study?</div>
+    <table class="options-table">
+      <tr><td class="opt-mark">( &nbsp; ) a)</td><td>Servir como rede social aberta para postagem de fotos pessoais e vídeos.</td></tr>
+      <tr><td class="opt-mark">( &nbsp; ) b)</td><td>Apoiar estudantes do Técnico em Informática do CETEP a planejar sua rotina de estudos e tarefas com acessibilidade.</td></tr>
+      <tr><td class="opt-mark">( &nbsp; ) c)</td><td>Vender peças e componentes eletrônicos para empresas externas.</td></tr>
+      <tr><td class="opt-mark">( &nbsp; ) d)</td><td>Funcionar exclusivamente como um jogo virtual de entretenimento.</td></tr>
+    </table>
+  </div>
+
+  <!-- QUESTÃO 2 -->
+  <div class="question-item">
+    <div class="question-title">QUESTÃO 2 – DIVISÃO EM SUBTAREFAS</div>
+    <div class="question-desc">Na tela de Tarefas, qual é o benefício de dividir um projeto grande (ex: "Desenvolver um Sistema Web") em várias subtarefas menores?</div>
+    <table class="options-table">
+      <tr><td class="opt-mark">( &nbsp; ) a)</td><td>Permite realizar uma etapa de cada vez, facilitando a concentração e reduzindo a sobrecarga mental.</td></tr>
+      <tr><td class="opt-mark">( &nbsp; ) b)</td><td>Aumenta obrigatoriamente a quantidade de horas seguidas que o estudante precisa estudar.</td></tr>
+      <tr><td class="opt-mark">( &nbsp; ) c)</td><td>Serve para ocultar as disciplinas mais difíceis da grade curricular.</td></tr>
+      <tr><td class="opt-mark">( &nbsp; ) d)</td><td>Não traz nenhuma utilidade prática para o estudante.</td></tr>
+    </table>
+  </div>
+
+  <!-- QUESTÃO 3 -->
+  <div class="question-item">
+    <div class="question-title">QUESTÃO 3 – MODO FOCO (TEMPORIZADOR)</div>
+    <div class="question-desc">Para que serve o recurso "Modo Foco" disponível no aplicativo?</div>
+    <table class="options-table">
+      <tr><td class="opt-mark">( &nbsp; ) a)</td><td>Ajustar o foco da câmera fotográfica do celular do estudante.</td></tr>
+      <tr><td class="opt-mark">( &nbsp; ) b)</td><td>Cronometrar blocos de estudo dedicado (ex: 10, 25 ou 50 min) com interface limpa e sem distrações.</td></tr>
+      <tr><td class="opt-mark">( &nbsp; ) c)</td><td>Tocar alarmes sonoros estridentes a cada minuto.</td></tr>
+      <tr><td class="opt-mark">( &nbsp; ) d)</td><td>Bloquear o computador permanentemente após dez minutos de uso.</td></tr>
+    </table>
+  </div>
+
+  <!-- QUESTÃO 4 -->
+  <div class="question-item">
+    <div class="question-title">QUESTÃO 4 – RECURSOS DE ACESSIBILIDADE</div>
+    <div class="question-desc">Um estudante com baixa visão ou sensibilidade à claridade pode personalizar a plataforma nas Configurações escolhendo:</div>
+    <table class="options-table">
+      <tr><td class="opt-mark">( &nbsp; ) a)</td><td>Tamanho de fonte ampliado (Grande) e temas visuais como Escuro ou Alto Contraste.</td></tr>
+      <tr><td class="opt-mark">( &nbsp; ) b)</td><td>Obrigatoriedade de usar apenas fontes minúsculas em fundo cinza claro.</td></tr>
+      <tr><td class="opt-mark">( &nbsp; ) c)</td><td>Desativação de todos os botões e recursos da tela.</td></tr>
+      <tr><td class="opt-mark">( &nbsp; ) d)</td><td>Remoção de todas as cores deixando a tela inteiramente em branco.</td></tr>
+    </table>
+  </div>
+
+  <!-- QUESTÃO 5 -->
+  <div class="question-item">
+    <div class="question-title">QUESTÃO 5 – GAMIFICAÇÃO E MOTIVAÇÃO</div>
+    <div class="question-desc">De que forma o aluno acumula pontos e sobe de nível no CETEP Tech Study?</div>
+    <table class="options-table">
+      <tr><td class="opt-mark">( &nbsp; ) a)</td><td>Concluindo tarefas (+10 pts), marcando subtarefas (+5 pts) e finalizando sessões de foco (+15 pts).</td></tr>
+      <tr><td class="opt-mark">( &nbsp; ) b)</td><td>Pagando valores em dinheiro para desbloquear estrelas.</td></tr>
+      <tr><td class="opt-mark">( &nbsp; ) c)</td><td>Apenas fazendo login uma única vez por mês.</td></tr>
+      <tr><td class="opt-mark">( &nbsp; ) d)</td><td>Excluindo todas as suas tarefas antes do professor conferir.</td></tr>
+    </table>
+  </div>
+
+  <!-- ══════════════════════════════════════════════ PAGE 2 ══════════════════════════════════════════════ -->
+  <div class="page-break"></div>
+
+  <!-- QUESTÃO 6 -->
+  <div class="question-item">
+    <div class="question-title">QUESTÃO 6 – ASSOCIAÇÃO DE RECURSOS</div>
+    <div class="question-desc">Relacione cada funcionalidade do CETEP Tech Study com sua respectiva descrição:</div>
+    <table class="assoc-table">
+      <tr>
+        <td class="assoc-col-left">
+          <strong>( A ) Agenda e Calendário</strong><br>
+          <strong>( B ) Resumir Texto</strong><br>
+          <strong>( C ) Painel do Professor</strong><br>
+          <strong>( D ) Exportar Dados (JSON)</strong>
+        </td>
+        <td class="assoc-col-right">
+          <div>( &nbsp; ) Extrai os tópicos e termos principais de textos longos para facilitar o estudo.</div>
+          <div>( &nbsp; ) Permite salvar um arquivo de backup com todas as tarefas e progresso.</div>
+          <div>( &nbsp; ) Mostra datas de provas, entregas de trabalhos e atividades da turma.</div>
+          <div>( &nbsp; ) Modo demonstrativo que exibe a visão agregada de desempenho da turma do CETEP.</div>
+        </td>
+      </tr>
+    </table>
+  </div>
+
+  <!-- QUESTÃO 7 -->
+  <div class="question-item">
+    <div class="question-title">QUESTÃO 7 – VERDADEIRO OU FALSO</div>
+    <div class="question-desc">Marque <strong>( V )</strong> para as afirmativas Verdadeiras e <strong>( F )</strong> para as Falsas:</div>
+    <table class="options-table">
+      <tr><td class="opt-mark">( &nbsp; )</td><td>As cores de prioridade (verde = baixa, amarelo = média, vermelho = alta) ajudam a identificar o que é urgente.</td></tr>
+      <tr><td class="opt-mark">( &nbsp; )</td><td>O aplicativo apaga todos os seus dados se você desligar o computador ou fechar a janela do navegador.</td></tr>
+      <tr><td class="opt-mark">( &nbsp; )</td><td>A aplicação foi construída de forma responsiva para funcionar bem tanto em computadores quanto em celulares.</td></tr>
+      <tr><td class="opt-mark">( &nbsp; )</td><td>É possível reabrir uma tarefa concluída caso você precise revisar o conteúdo estudado.</td></tr>
+    </table>
+  </div>
+
+  <!-- QUESTÃO 8 -->
+  <div class="question-item">
+    <div class="question-title">QUESTÃO 8 – APLICAÇÃO PRÁTICA NO CURSO TÉCNICO</div>
+    <div class="question-desc">Imagine que você tem uma prova prática de <strong>Redes de Computadores</strong> ou <strong>Algoritmos</strong> na próxima semana no CETEP. Como você organizaria essa atividade dividindo-a em <strong>3 subtarefas simples</strong>?</div>
+    <div class="answer-line-prompt"><strong>Subtarefa 1:</strong></div>
+    <div class="answer-line"></div>
+    <div class="answer-line-prompt"><strong>Subtarefa 2:</strong></div>
+    <div class="answer-line"></div>
+    <div class="answer-line-prompt"><strong>Subtarefa 3:</strong></div>
+    <div class="answer-line"></div>
+  </div>
+
+  <!-- QUESTÃO 9 -->
+  <div class="question-item">
+    <div class="question-title">QUESTÃO 9 – PREFERÊNCIA DE CONFORTO VISUAL</div>
+    <div class="question-desc">Ao utilizar telas para estudar, qual configuração visual (<em>Tema Claro</em>, <em>Tema Escuro</em> ou <em>Alto Contraste</em>) você considera mais confortável para não cansar a sua vista? Justifique sua resposta.</div>
+    <div class="answer-line" style="margin-top: 6px;"></div>
+    <div class="answer-line"></div>
+    <div class="answer-line"></div>
+  </div>
+
+  <!-- QUESTÃO 10 -->
+  <div class="question-item">
+    <div class="question-title">QUESTÃO 10 – CRIATIVIDADE E IDENTIDADE CETEP</div>
+    <div class="question-desc">Crie uma <strong>Conquista / Troféu</strong> especial para o aplicativo que represente os estudantes do CETEP Alberto Torres de Cruz das Almas. Dê um nome para a conquista e explique o que o aluno precisa fazer para ganhá-la.</div>
+    <div class="answer-line-prompt"><strong>Nome da Conquista:</strong></div>
+    <div class="answer-line"></div>
+    <div class="answer-line-prompt"><strong>O que o estudante precisa fazer para conquistá-la:</strong></div>
+    <div class="answer-line"></div>
+    <div class="answer-line"></div>
+  </div>
+
+</body>
+</html>'''
+
+# Save HTML
+html_path = os.path.abspath('atividade_cetep_tech_study_aee.html')
+pdf_path = os.path.abspath('atividade_cetep_tech_study_aee.pdf')
+
+with open(html_path, 'w', encoding='utf-8') as f:
+    f.write(html_content)
+
+# Compile to PDF
+edge_path = r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
+cmd = [
+    edge_path,
+    "--headless",
+    "--disable-gpu",
+    "--no-pdf-header-footer",
+    f"--print-to-pdf={pdf_path}",
+    f"file:///{html_path.replace(os.sep, '/')}"
+]
+
+res = subprocess.run(cmd, capture_output=True, text=True)
+print("PDF compilation exit code:", res.returncode)
+print(f"PDF exists: {os.path.exists(pdf_path)}")
+if os.path.exists(pdf_path):
+    print(f"PDF Size: {os.path.getsize(pdf_path)} bytes")
