@@ -464,7 +464,7 @@ ul.blist.tight li { margin-bottom: 0; }
   <strong>Referência cambial utilizada:</strong> US$ 1,00 = R$ 5,60 (setembro de 2026, aproximado). Os valores em reais para serviços em dólar estão sujeitos à variação cambial e ao IOF de 4,38% em cartões brasileiros. Os valores abaixo representam estimativas realistas para planejamento.
 </div>
 
-<h3>4.1 Fase 1 — Para a Mostra (outubro de 2026) — Custo zero de infraestrutura</h3>
+<h3>4.1 Fase 1 — Para a Mostra (outubro de 2026)</h3>
 
 <table class="tbl">
   <thead>
@@ -473,15 +473,19 @@ ul.blist.tight li { margin-bottom: 0; }
   <tbody>
     <tr><td>Vercel (hospedagem)</td><td>Hobby (Gratuito)</td><td class="right bold">R$ 0,00</td><td class="right">Sem custo</td><td>HTTPS automático incluso. Endereço no formato *.vercel.app. Suficiente para a demonstração.</td></tr>
     <tr><td>GitHub (repositório)</td><td>Free</td><td class="right bold">R$ 0,00</td><td class="right">Sem custo</td><td>Repositório público. Integração automática com a Vercel para publicação do site.</td></tr>
-    <tr><td>Domínio .com.br</td><td>Registro.br — Opcional</td><td class="right">Não incluso</td><td class="right">R$ 40,00/ano</td><td>Opcional para a Mostra. O endereço gratuito da Vercel já funciona normalmente.</td></tr>
     <tr><td>SSL / HTTPS (segurança)</td><td>Let's Encrypt — Automático</td><td class="right bold">R$ 0,00</td><td class="right">Sem custo</td><td>Certificado de segurança incluso automaticamente em todos os planos da Vercel.</td></tr>
-    <tr class="subtotal-row"><td colspan="2"><strong>Infraestrutura — Total mensal</strong></td><td class="right bold">R$ 0,00 / mês</td><td class="right">R$ 40,00 (domínio, opcional)</td><td>Hospedagem e publicação do site sem nenhum custo mensal</td></tr>
-    <tr class="total-row"><td colspan="2"><strong>Ferramentas de desenvolvimento (responsável técnico)</strong></td><td class="right">R$ 75,98 / mês</td><td class="right">Não incluso</td><td>ChatGPT Go + Google AI Pro — custeadas atualmente pelo responsável técnico</td></tr>
+    <tr class="subtotal-row"><td colspan="2"><strong>Infraestrutura — Total mensal</strong></td><td class="right bold">R$ 0,00 / mês</td><td class="right">Sem custo</td><td>Hospedagem e publicação do site sem nenhum custo mensal</td></tr>
+    <tr><td>Ferramentas de desenvolvimento</td><td>IA (custeadas pelo responsável)</td><td class="right">R$ 75,98 / mês</td><td class="right">Não incluso</td><td>ChatGPT Go + Google AI Pro — instrumentos de trabalho</td></tr>
+    <tr class="subtotal-row"><td colspan="2"><strong>Ferramentas de desenvolvimento para setembro e outubro</strong></td><td class="right">Não aplicável</td><td class="right">R$ 151,96</td><td>2 meses de ferramentas (setembro e outubro)</td></tr>
+    <tr><td>Domínio .com.br</td><td>Registro.br — Opcional</td><td class="right">Não incluso</td><td class="right">R$ 40,00</td><td>Opcional para a Mostra.</td></tr>
+    <tr class="total-row"><td colspan="2"><strong>TOTAL INICIAL DA FASE 1</strong></td><td class="right">Não aplicável</td><td class="right"><strong>R$ 191,96</strong></td><td>Valor inicial estimado até a Mostra (opcional + ferramentas de 2 meses)</td></tr>
   </tbody>
 </table>
 
-<div class="infobox">
-  <strong>Observação:</strong> As ferramentas de desenvolvimento (R$ 75,98/mês) são atualmente custeadas pelo próprio responsável técnico e utilizadas exclusivamente para programar, testar, corrigir e evoluir o projeto. Elas não são necessárias para que o site funcione para alunos e professores.
+<div class="infobox" style="border-left-color:#0f2e6e; background:#eef2fb; padding: 10px 14px;">
+  <strong style="font-size:10.5pt; display:block; margin-bottom:5px; color:#0f2e6e;">INVESTIMENTO INICIAL PARA A MOSTRA: R$ 191,96</strong>
+  O valor corresponde a R$ 151,96 referentes às ferramentas de desenvolvimento utilizadas em setembro e outubro de 2026 e R$ 40,00 referentes ao domínio opcional.<br><br>
+  A hospedagem, o GitHub e o HTTPS permanecem sem custo nesta fase.
 </div>
 
 <h3>4.2 Fase 2 e 3 — Implementação em Produção (a partir de 2027)</h3>
@@ -589,7 +593,8 @@ ul.blist.tight li { margin-bottom: 0; }
 </table>
 
 <div class="infobox">
-  Esses valores correspondem ao investimento pessoal do responsável técnico durante o período de desenvolvimento. <strong>Não representam custo obrigatório para o funcionamento do site</strong>, nem são de responsabilidade da instituição — são registrados aqui apenas para transparência e contextualização do esforço de desenvolvimento. A estimativa para setembro e outubro de 2026 é de <strong>R$ 151,96</strong> em ferramentas de desenvolvimento.
+  Esses valores correspondem ao investimento pessoal do responsável técnico durante o período de desenvolvimento. <strong>Não representam custo obrigatório para o funcionamento do site</strong>, nem são de responsabilidade da instituição — são registrados aqui apenas para transparência e contextualização do esforço de desenvolvimento.<br><br>
+  O valor de <strong>R$ 191,96</strong> (solicitado como custo inicial na Fase 1) é diferente: ele representa apenas o valor referente às ferramentas de desenvolvimento para os meses de setembro e outubro de 2026 (R$ 151,96), somado ao custo do domínio opcional (R$ 40,00).
 </div>
 
 
@@ -654,18 +659,18 @@ ul.blist.tight li { margin-bottom: 0; }
 ═══════════════════════════════════════════════ -->
 <h2>7. Custo Total Consolidado por Fase</h2>
 
-<h3>7.1 Fase 1 — Mostra Pedagógica (out/2026) — Investimento imediato</h3>
+<h3>7.1 Fase 1 — Mostra Pedagógica (out/2026) — Investimento inicial</h3>
 
 <table class="tbl">
   <thead>
     <tr><th>Item</th><th>Tipo</th><th class="right">Valor</th></tr>
   </thead>
   <tbody>
-    <tr><td>Infraestrutura (Vercel Hobby + GitHub Free)</td><td>Mensal</td><td class="right bold">R$ 0,00</td></tr>
-    <tr><td>Domínio .com.br (opcional)</td><td>Anual — único</td><td class="right">R$ 40,00</td></tr>
-    <tr><td>SSL/HTTPS</td><td>Incluso no Vercel</td><td class="right bold">R$ 0,00</td></tr>
-    <tr><td>Ferramentas de desenvolvimento assistido (ChatGPT Go + Google AI Pro — em uso)</td><td>Mensal</td><td class="right">R$ 75,98 / mês</td></tr>
-    <tr class="total-row"><td colspan="2"><strong>TOTAL Fase 1 (infraestrutura)</strong></td><td class="right">R$ 0,00 / mês + R$ 40,00 único (opcional)</td></tr>
+    <tr><td>Infraestrutura (Vercel Hobby + GitHub Free + SSL)</td><td>Mensal</td><td class="right bold">R$ 0,00</td></tr>
+    <tr><td>Ferramentas de desenvolvimento (Gemini Pro + ChatGPT Go)</td><td>Mensal</td><td class="right">R$ 75,98 / mês</td></tr>
+    <tr><td>Custo inicial até outubro (2 meses de ferramentas)</td><td>Único</td><td class="right">R$ 151,96</td></tr>
+    <tr><td>Domínio .com.br</td><td>Único (opcional)</td><td class="right">R$ 40,00</td></tr>
+    <tr class="total-row"><td colspan="2"><strong>TOTAL INICIAL Fase 1</strong></td><td class="right"><strong>R$ 191,96</strong></td></tr>
   </tbody>
 </table>
 
@@ -771,7 +776,7 @@ ul.blist.tight li { margin-bottom: 0; }
 </div>
 
 <div class="infobox">
-  <strong>Observação:</strong> Os custos de infraestrutura são recorrentes e necessários para manter a plataforma em produção. As ferramentas de desenvolvimento assistido são utilizadas pelo responsável técnico para programar, testar, corrigir e evoluir o sistema; elas <strong>não são necessárias</strong> para que a plataforma funcione para os alunos e professores. Créditos adicionais do Antigravity, ChatGPT Plus e Claude Pro <strong>não estão inclusos no custo atual</strong> — são cenários futuros ou opcionais. <strong>Os valores anuais correspondem à projeção de 12 meses de custos recorrentes.</strong>
+  <strong>Observação:</strong> Os custos de infraestrutura são recorrentes e necessários para manter a plataforma em produção. As ferramentas de desenvolvimento assistido são utilizadas pelo responsável técnico para programar, testar, corrigir e evoluir o sistema; elas <strong>não são necessárias</strong> para que a plataforma funcione para os alunos e professores. Créditos adicionais do Antigravity, ChatGPT Plus e Claude Pro <strong>não estão inclusos no custo atual</strong> — são cenários futuros ou opcionais. <strong>Os valores anuais correspondem à projeção de 12 meses de custos recorrentes. Investimento inicial estimado até a Mostra (Fase 1): R$ 191,96 (este valor inicial não representa uma mensalidade).</strong>
 </div>
 
 
