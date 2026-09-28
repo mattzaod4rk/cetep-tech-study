@@ -469,13 +469,18 @@ ul.blist.tight li { margin-bottom: 0; }
     <tr><th>Serviço</th><th>Plano</th><th>Custo Mensal</th><th>Custo Único</th><th>Observação</th></tr>
   </thead>
   <tbody>
-    <tr><td>Vercel (hospedagem)</td><td>Hobby (Gratuito)</td><td class="right bold">R$ 0,00</td><td class="right">—</td><td>HTTPS automático incluso. URL: *.vercel.app. Suficiente para demonstração.</td></tr>
-    <tr><td>GitHub (repositório)</td><td>Free</td><td class="right bold">R$ 0,00</td><td class="right">—</td><td>Repositório público. CI/CD automático com Vercel.</td></tr>
-    <tr><td>Domínio .com.br</td><td>Opcional</td><td class="right">—</td><td class="right">R$ 40,00</td><td>Registro.br. Opcional para a Mostra — URL Vercel gratuita já funciona.</td></tr>
-    <tr><td>SSL / HTTPS</td><td>Let's Encrypt (Vercel)</td><td class="right bold">R$ 0,00</td><td class="right">—</td><td>Incluso automaticamente em qualquer plano Vercel.</td></tr>
-    <tr class="total-row"><td colspan="2"><strong>TOTAL FASE 1 (infraestrutura)</strong></td><td class="right">R$ 0,00 / mês</td><td class="right">R$ 40,00 (opcional)</td><td>Deploy e demonstração sem custo de infraestrutura</td></tr>
+    <tr><td>Vercel (hospedagem)</td><td>Hobby (Gratuito)</td><td class="right bold">R$ 0,00</td><td class="right">Sem custo</td><td>HTTPS automático incluso. Endereço no formato *.vercel.app. Suficiente para a demonstração.</td></tr>
+    <tr><td>GitHub (repositório)</td><td>Free</td><td class="right bold">R$ 0,00</td><td class="right">Sem custo</td><td>Repositório público. Integração automática com a Vercel para publicação do site.</td></tr>
+    <tr><td>Domínio .com.br</td><td>Registro.br — Opcional</td><td class="right">Não incluso</td><td class="right">R$ 40,00/ano</td><td>Opcional para a Mostra. O endereço gratuito da Vercel já funciona normalmente.</td></tr>
+    <tr><td>SSL / HTTPS (segurança)</td><td>Let's Encrypt — Automático</td><td class="right bold">R$ 0,00</td><td class="right">Sem custo</td><td>Certificado de segurança incluso automaticamente em todos os planos da Vercel.</td></tr>
+    <tr class="subtotal-row"><td colspan="2"><strong>Infraestrutura — Total mensal</strong></td><td class="right bold">R$ 0,00 / mês</td><td class="right">R$ 40,00 (domínio, opcional)</td><td>Hospedagem e publicação do site sem nenhum custo mensal</td></tr>
+    <tr class="total-row"><td colspan="2"><strong>Ferramentas de desenvolvimento (responsável técnico)</strong></td><td class="right">R$ 75,98 / mês</td><td class="right">Não incluso</td><td>ChatGPT Go + Google AI Pro — custeadas atualmente pelo responsável técnico</td></tr>
   </tbody>
 </table>
+
+<div class="infobox">
+  <strong>Observação:</strong> As ferramentas de desenvolvimento (R$ 75,98/mês) são atualmente custeadas pelo próprio responsável técnico e utilizadas exclusivamente para programar, testar, corrigir e evoluir o projeto. Elas não são necessárias para que o site funcione para alunos e professores.
+</div>
 
 <h3>4.2 Fase 2 e 3 — Implementação em Produção (a partir de 2027)</h3>
 
@@ -484,12 +489,12 @@ ul.blist.tight li { margin-bottom: 0; }
     <tr><th>Serviço</th><th>Plano</th><th class="right">Custo Mensal (USD)</th><th class="right">Custo Mensal (R$)*</th><th>O que inclui</th></tr>
   </thead>
   <tbody>
-    <tr><td>Supabase (banco de dados)</td><td>Pro</td><td class="right">US$ 25,00</td><td class="right bold">≈ R$ 145,00</td><td>PostgreSQL always-on, 8 GB storage, Auth incluso, RLS, backups diários 7 dias, 100.000 usuários ativos/mês, 250 GB egress</td></tr>
-    <tr><td>Vercel (hospedagem)</td><td>Pro</td><td class="right">US$ 20,00</td><td class="right bold">≈ R$ 116,00</td><td>Domínio customizado, logs de auditoria, variáveis de ambiente seguras, proteção de senha, maior limite de build</td></tr>
-    <tr><td>Domínio .com.br</td><td>Registro.br (1 ano)</td><td class="right">—</td><td class="right bold">R$ 40,00/ano</td><td>Domínio ceteptechstudy.com.br ou similar. Pago anualmente.</td></tr>
-    <tr><td>E-mail transacional</td><td>Resend (Free tier)</td><td class="right">US$ 0,00</td><td class="right bold">R$ 0,00</td><td>Até 3.000 e-mails/mês gratuitos. Suficiente para confirmação de cadastro e recuperação de senha.</td></tr>
-    <tr class="subtotal-row"><td colspan="2"><strong>Subtotal mensal (Fases 2–3)</strong></td><td class="right">US$ 45,00</td><td class="right">≈ R$ 261,00</td><td>+ R$ 40,00/ano pelo domínio (≈ R$ 3,33/mês pro-rata)</td></tr>
-    <tr class="total-row"><td colspan="2"><strong>TOTAL MENSAL ESTIMADO (infraestrutura)</strong></td><td class="right">—</td><td class="right">≈ R$ 264,33 / mês</td><td>Inclui banco, hospedagem, domínio pro-rata e e-mail</td></tr>
+    <tr><td>Supabase (banco de dados)</td><td>Pro</td><td class="right">US$ 25,00</td><td class="right bold">≈ R$ 145,00</td><td>PostgreSQL ativo 24h, 8 GB de armazenamento, autenticação inclusa, backups diários, até 100.000 usuários ativos/mês</td></tr>
+    <tr><td>Vercel (hospedagem)</td><td>Pro</td><td class="right">US$ 20,00</td><td class="right bold">≈ R$ 116,00</td><td>Domínio próprio, proteção de variáveis de ambiente, logs de auditoria e maior capacidade de publicação</td></tr>
+    <tr><td>Domínio .com.br</td><td>Registro.br (1 ano)</td><td class="right">Anual</td><td class="right bold">R$ 40,00/ano</td><td>Domínio ceteptechstudy.com.br ou similar. Pago uma vez por ano.</td></tr>
+    <tr><td>E-mail transacional</td><td>Resend (Gratuito)</td><td class="right">US$ 0,00</td><td class="right bold">R$ 0,00</td><td>Até 3.000 e-mails/mês sem custo. Suficiente para confirmação de cadastro e recuperação de senha.</td></tr>
+    <tr class="subtotal-row"><td colspan="2"><strong>Subtotal mensal (Fases 2–3)</strong></td><td class="right">US$ 45,00</td><td class="right">≈ R$ 261,00</td><td>Mais R$ 40,00/ano pelo domínio (≈ R$ 3,33/mês)</td></tr>
+    <tr class="total-row"><td colspan="2"><strong>TOTAL MENSAL ESTIMADO (infraestrutura)</strong></td><td class="right">Sem custo adicional</td><td class="right">≈ R$ 264,33 / mês</td><td>Inclui banco de dados, hospedagem, domínio e e-mail</td></tr>
   </tbody>
 </table>
 
@@ -520,34 +525,34 @@ ul.blist.tight li { margin-bottom: 0; }
       <td><strong>Google Gemini</strong><br><small>Antigravity / AI Pro</small></td>
       <td>AI Pro (≈ R$ 35,99/mês)</td>
       <td class="right bold">≈ R$ 35,99</td>
-      <td>Ambiente principal de desenvolvimento: programação assistida, testes, geração de código, deploy, PDF, documentação e manutenção do sistema.</td>
+      <td>Principal ferramenta usada no desenvolvimento, testes, publicação e manutenção do sistema.</td>
       <td class="center"><span class="badge badge-green">Em uso</span></td>
     </tr>
     <tr>
       <td><strong>Claude</strong><br><small>Anthropic (via Antigravity)</small></td>
       <td>Via Antigravity</td>
-      <td class="right bold">R$ 0,00 adicional</td>
-      <td>Modelos Claude disponibilizados dentro do ambiente Antigravity para tarefas de desenvolvimento — sem custo adicional ao plano AI Pro já contratado.</td>
+      <td class="right bold">Sem custo adicional</td>
+      <td>Modelos Claude disponíveis dentro do Antigravity sem custo extra ao plano já contratado. Usado para revisão e análise complementar.</td>
       <td class="center"><span class="badge badge-blue">Disponível</span></td>
     </tr>
     <tr>
       <td><strong>Créditos adicionais<br>Antigravity (AGY)</strong><br><small>Google</small></td>
       <td>Sob demanda</td>
       <td class="right bold">Variável</td>
-      <td>Continuidade do desenvolvimento em períodos de maior consumo da cota semanal. Utilizados somente quando necessário, sem mensalidade fixa.</td>
+      <td>Ativados somente quando o volume de desenvolvimento ultrapassa a cota semanal do plano. Sem mensalidade fixa.</td>
       <td class="center"><span class="badge badge-yellow">Eventual</span></td>
     </tr>
     <tr>
       <td><strong>ChatGPT Plus</strong><br><small>OpenAI</small></td>
       <td>Plus — Opcional</td>
       <td class="right bold">Não incluso</td>
-      <td>Possível upgrade futuro das ferramentas do desenvolvedor para maior capacidade de uso. Não faz parte do custo atual.</td>
+      <td>Possível upgrade futuro para maior capacidade. Não faz parte do custo atual.</td>
       <td class="center"><span class="badge badge-yellow">Opcional</span></td>
     </tr>
     <tr class="subtotal-row">
-      <td colspan="2"><strong>Cenário atual (ChatGPT Go + Google AI Pro)</strong></td>
+      <td colspan="2"><strong>Custo atual (ChatGPT Go + Google AI Pro)</strong></td>
       <td class="right">R$ 75,98 / mês</td>
-      <td colspan="2">Ferramentas atualmente utilizadas pelo responsável técnico</td>
+      <td colspan="2">Ferramentas atualmente utilizadas e custeadas pelo responsável técnico</td>
     </tr>
     <tr class="subtotal-row">
       <td colspan="2"><strong>Cenário ampliado (ChatGPT Plus + Google AI Pro — futuro/opcional)</strong></td>
@@ -557,14 +562,34 @@ ul.blist.tight li { margin-bottom: 0; }
     <tr class="total-row">
       <td colspan="2"><strong>Cenário de sprint (ferramentas atuais + créditos Antigravity sob demanda)</strong></td>
       <td class="right">R$ 75,98 + variável</td>
-      <td colspan="2">Créditos adicionais ativados sob demanda em períodos de desenvolvimento intenso; valor variável sem mensalidade fixa</td>
+      <td colspan="2">Créditos adicionais ativados conforme necessidade; sem mensalidade fixa</td>
     </tr>
   </tbody>
 </table>
 
 <div class="infobox">
-  <strong>Observação importante:</strong> As ferramentas de desenvolvimento assistido por IA são instrumentos de trabalho do responsável técnico e <em>não</em> compõem a infraestrutura do site. O CETEP Tech Study funciona normalmente para alunos e professores sem que essas assinaturas estejam ativas — elas são necessárias apenas para programar, testar, corrigir e evoluir o sistema.
+  <strong>Observação:</strong> As ferramentas de desenvolvimento assistido por IA são instrumentos de trabalho do responsável técnico. O site funciona normalmente para alunos e professores sem que essas assinaturas estejam ativas — elas são necessárias apenas para quem programa, testa e mantém o sistema.
 </div>
+
+<!-- ─── INVESTIMENTO JÁ REALIZADO ─── -->
+<h3>5.1 Investimento já realizado pelo responsável técnico</h3>
+<p>O desenvolvimento do CETEP Tech Study teve início em <strong>julho de 2026</strong>. Desde então, o responsável técnico vem arcando pessoalmente com os custos das ferramentas de desenvolvimento.</p>
+
+<table class="tbl">
+  <thead>
+    <tr><th>Período</th><th>Ferramenta</th><th class="right">Custo mensal</th><th class="right">Valor acumulado</th><th>Observação</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Jul–Set/2026<br><small>3 meses</small></td><td>ChatGPT Go + Google AI Pro</td><td class="right">R$ 75,98</td><td class="right bold">R$ 227,94</td><td>Investimento já realizado pelo responsável técnico desde o início do desenvolvimento</td></tr>
+    <tr><td>Outubro/2026<br><small>+ 1 mês</small></td><td>ChatGPT Go + Google AI Pro</td><td class="right">R$ 75,98</td><td class="right">R$ 75,98</td><td>Mês da Mostra — custo previsto, ainda a ser pago</td></tr>
+    <tr class="total-row"><td colspan="2"><strong>Projeção acumulada até outubro de 2026</strong></td><td class="right">R$ 75,98 / mês</td><td class="right"><strong>R$ 303,92</strong></td><td>Total estimado de julho a outubro de 2026</td></tr>
+  </tbody>
+</table>
+
+<div class="infobox">
+  Esses valores correspondem ao investimento pessoal do responsável técnico durante o período de desenvolvimento. <strong>Não representam custo obrigatório para o funcionamento do site</strong>, nem são de responsabilidade da instituição — são registrados aqui apenas para transparência e contextualização do esforço de desenvolvimento. A estimativa para setembro e outubro de 2026 é de <strong>R$ 151,96</strong> em ferramentas de desenvolvimento.
+</div>
+
 
 <!-- ═══════════════════════════════════════════════
      6. SEGURANÇA E LGPD
@@ -744,7 +769,7 @@ ul.blist.tight li { margin-bottom: 0; }
 </div>
 
 <div class="infobox">
-  <strong>Observação:</strong> Os custos de infraestrutura são recorrentes e necessários para manter a plataforma em produção. As ferramentas de desenvolvimento assistido são utilizadas pelo responsável técnico para programar, testar, corrigir e evoluir o sistema; elas <strong>não são necessárias</strong> para que a plataforma funcione para os alunos e professores. Créditos adicionais do Antigravity, ChatGPT Plus e Claude Pro <strong>não estão inclusos no custo atual</strong> — são cenários futuros ou opcionais.
+  <strong>Observação:</strong> Os custos de infraestrutura são recorrentes e necessários para manter a plataforma em produção. As ferramentas de desenvolvimento assistido são utilizadas pelo responsável técnico para programar, testar, corrigir e evoluir o sistema; elas <strong>não são necessárias</strong> para que a plataforma funcione para os alunos e professores. Créditos adicionais do Antigravity, ChatGPT Plus e Claude Pro <strong>não estão inclusos no custo atual</strong> — são cenários futuros ou opcionais. <strong>Os valores anuais correspondem à projeção de 12 meses de custos recorrentes.</strong>
 </div>
 
 
@@ -794,16 +819,26 @@ ul.blist.tight li { margin-bottom: 0; }
 ═══════════════════════════════════════════════ -->
 <h2>11. Responsabilidade Técnica e Continuidade do Projeto</h2>
 
-<p>O responsável pelo desenvolvimento do CETEP Tech Study manifesta interesse em permanecer responsável pela manutenção técnica e evolução da plataforma enquanto o projeto permanecer sob sua coordenação, incluindo correção de bugs, atualizações, gerenciamento técnico da infraestrutura, manutenção do ambiente de produção, implantação de novas funcionalidades, suporte técnico e adequações de segurança e acessibilidade.</p>
+<p>O responsável pelo desenvolvimento do CETEP Tech Study tem interesse em continuar cuidando do projeto enquanto ele permanecer ativo na instituição. Isso inclui manter o site funcionando, corrigir problemas, atualizar o sistema, adicionar novas funcionalidades e garantir que tudo esteja seguro e acessível para os alunos e professores.</p>
 
-<p>A continuidade dessa atuação deverá ser definida posteriormente pela instituição, mediante a forma de vínculo ou contratação considerada adequada pela administração escolar.</p>
+<p>As áreas de atuação previstas são:</p>
+<ul class="blist tight">
+  <li>Manutenção técnica e correção de falhas</li>
+  <li>Atualizações de segurança e acessibilidade</li>
+  <li>Gerenciamento da infraestrutura e do ambiente de produção</li>
+  <li>Implantação de novas funcionalidades conforme demanda pedagógica</li>
+  <li>Suporte técnico ao uso da plataforma por alunos e professores</li>
+  <li>Evolução contínua do sistema</li>
+</ul>
+
+<p>A forma de continuidade desse trabalho — se como colaboração voluntária, estágio, bolsa ou outra modalidade — será definida pela instituição de acordo com suas normas e possibilidades.</p>
 
 <div class="infobox">
-  <strong>Responsável técnico proposto:</strong> Matheus N. — desenvolvimento, manutenção, implantação, correção de falhas, evolução da plataforma e suporte técnico relacionado ao CETEP Tech Study.
+  <strong>Responsável técnico proposto:</strong> Matheus de Jesus Nascimento — desenvolvimento, manutenção, implantação e suporte técnico do CETEP Tech Study.
 </div>
 
 <div class="alertbox">
-  <strong>Nota:</strong> Este registro expressa disponibilidade e intenção. Não constitui promessa contratual, não define cargo, salário ou modalidade de contratação. Qualquer vínculo formal deverá ser estabelecido pela administração escolar conforme as normas institucionais e legislação aplicável.
+  <strong>Nota:</strong> Este registro expressa disponibilidade e intenção. Não é um contrato, não define salário, cargo ou modalidade de vínculo. Qualquer formalização caberá à administração escolar.
 </div>
 
 <div class="pb"></div>
@@ -816,14 +851,15 @@ ul.blist.tight li { margin-bottom: 0; }
   <div class="sig-grid">
     <div>
       <div class="sig-field">
-        <span class="sig-label">Responsável pelo projeto / Desenvolvedor</span>
-        <div class="sig-line"></div>
-        <div class="sig-sub">Nome completo / Assinatura</div>
+        <span class="sig-label">Responsável pelo projeto e desenvolvimento</span>
+        <div style="margin-top:4px; font-size:9pt; font-weight:bold; color:#1a1a1a;">Matheus de Jesus Nascimento</div>
+        <div class="sig-line" style="margin-top:18px;"></div>
+        <div class="sig-sub">Assinatura</div>
       </div>
       <div class="sig-field">
         <span class="sig-label">Cargo / Função na instituição</span>
         <div class="sig-line"></div>
-        <div class="sig-sub">Ex.: Estudante / Professor / Coordenador de curso</div>
+        <div class="sig-sub">Ex.: Estudante do Técnico em Informática / Desenvolvedor</div>
       </div>
     </div>
     <div>
