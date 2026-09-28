@@ -464,28 +464,25 @@ ul.blist.tight li { margin-bottom: 0; }
   <strong>Referência cambial utilizada:</strong> US$ 1,00 = R$ 5,60 (setembro de 2026, aproximado). Os valores em reais para serviços em dólar estão sujeitos à variação cambial e ao IOF de 4,38% em cartões brasileiros. Os valores abaixo representam estimativas realistas para planejamento.
 </div>
 
-<h3>4.1 Fase 1 — Para a Mostra (outubro de 2026)</h3>
+<h3>4.1 Fase 1 — Para a Mostra (setembro e outubro de 2026)</h3>
 
 <table class="tbl">
   <thead>
-    <tr><th>Serviço</th><th>Plano</th><th>Custo Mensal</th><th>Custo Único</th><th>Observação</th></tr>
+    <tr><th>Serviço</th><th>Plano</th><th>Custo mensal</th><th>Período</th><th class="right">Custo até a Mostra</th><th>Observação</th></tr>
   </thead>
   <tbody>
-    <tr><td>Vercel (hospedagem)</td><td>Hobby (Gratuito)</td><td class="right bold">R$ 0,00</td><td class="right">Sem custo</td><td>HTTPS automático incluso. Endereço no formato *.vercel.app. Suficiente para a demonstração.</td></tr>
-    <tr><td>GitHub (repositório)</td><td>Free</td><td class="right bold">R$ 0,00</td><td class="right">Sem custo</td><td>Repositório público. Integração automática com a Vercel para publicação do site.</td></tr>
-    <tr><td>SSL / HTTPS (segurança)</td><td>Let's Encrypt — Automático</td><td class="right bold">R$ 0,00</td><td class="right">Sem custo</td><td>Certificado de segurança incluso automaticamente em todos os planos da Vercel.</td></tr>
-    <tr class="subtotal-row"><td colspan="2"><strong>Infraestrutura — Total mensal</strong></td><td class="right bold">R$ 0,00 / mês</td><td class="right">Sem custo</td><td>Hospedagem e publicação do site sem nenhum custo mensal</td></tr>
-    <tr><td>Ferramentas de desenvolvimento</td><td>IA (custeadas pelo responsável)</td><td class="right">R$ 75,98 / mês</td><td class="right">Não incluso</td><td>ChatGPT Go + Google AI Pro — instrumentos de trabalho</td></tr>
-    <tr class="subtotal-row"><td colspan="2"><strong>Ferramentas de desenvolvimento para setembro e outubro</strong></td><td class="right">Não aplicável</td><td class="right">R$ 151,96</td><td>2 meses de ferramentas (setembro e outubro)</td></tr>
-    <tr><td>Domínio .com.br</td><td>Registro.br — Opcional</td><td class="right">Não incluso</td><td class="right">R$ 40,00</td><td>Opcional para a Mostra.</td></tr>
-    <tr class="total-row"><td colspan="2"><strong>TOTAL INICIAL DA FASE 1</strong></td><td class="right">Não aplicável</td><td class="right"><strong>R$ 191,96</strong></td><td>Valor inicial estimado até a Mostra (opcional + ferramentas de 2 meses)</td></tr>
+    <tr><td>Vercel (hospedagem)</td><td>Hobby (Gratuito)</td><td>R$ 0,00/mês</td><td>Set–Out/2026</td><td class="right bold">R$ 0,00</td><td>HTTPS automático incluso. Suficiente para a demonstração.</td></tr>
+    <tr><td>GitHub (repositório)</td><td>Free</td><td>R$ 0,00/mês</td><td>Set–Out/2026</td><td class="right bold">R$ 0,00</td><td>Repositório e integração com a Vercel.</td></tr>
+    <tr><td>SSL / HTTPS (segurança)</td><td>Automático</td><td>R$ 0,00/mês</td><td>Set–Out/2026</td><td class="right bold">R$ 0,00</td><td>Certificado incluso automaticamente.</td></tr>
+    <tr><td>Ferramentas de desenvolvimento</td><td>ChatGPT Go + Google AI Pro</td><td>R$ 75,98/mês</td><td>2 meses</td><td class="right">R$ 151,96</td><td>Ferramentas utilizadas pelo responsável técnico para desenvolver, testar, corrigir e evoluir o sistema.</td></tr>
+    <tr><td>Domínio .com.br</td><td>Registro.br</td><td>Não se aplica</td><td>Pagamento único</td><td class="right">R$ 40,00</td><td>Opcional para a Mostra.</td></tr>
+    <tr class="total-row"><td colspan="4"><strong>TOTAL ESTIMADO DA FASE 1</strong></td><td class="right"><strong>R$ 191,96</strong></td><td>R$ 151,96 referentes a dois meses das ferramentas de desenvolvimento + R$ 40,00 referentes ao domínio opcional.</td></tr>
   </tbody>
 </table>
 
 <div class="infobox" style="border-left-color:#0f2e6e; background:#eef2fb; padding: 10px 14px;">
   <strong style="font-size:10.5pt; display:block; margin-bottom:5px; color:#0f2e6e;">INVESTIMENTO INICIAL PARA A MOSTRA: R$ 191,96</strong>
-  O valor corresponde a R$ 151,96 referentes às ferramentas de desenvolvimento utilizadas em setembro e outubro de 2026 e R$ 40,00 referentes ao domínio opcional.<br><br>
-  A hospedagem, o GitHub e o HTTPS permanecem sem custo nesta fase.
+  Esse valor considera dois meses das ferramentas de desenvolvimento atualmente utilizadas pelo responsável técnico e o registro opcional do domínio. A infraestrutura de hospedagem, GitHub e HTTPS permanece sem custo nesta fase.
 </div>
 
 <h3>4.2 Fase 2 e 3 — Implementação em Produção (a partir de 2027)</h3>
