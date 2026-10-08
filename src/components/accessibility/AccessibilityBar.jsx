@@ -1,20 +1,21 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Eye, Sun, Moon, Mic, Type, Settings, Sparkles } from 'lucide-react';
+import { Eye, Sun, Moon, Monitor, Mic, Volume2, VolumeX, Settings, Sparkles } from 'lucide-react';
 import { useApp } from '../../contexts/AppContext.jsx';
+import toast from 'react-hot-toast';
 
 export default function AccessibilityBar() {
   const {
     settings,
     updateSettings,
-    increaseFontSize,
-    decreaseFontSize,
     setIsTranscriptionOpen,
     isTranscriptionOpen
   } = useApp();
   const navigate = useNavigate();
 
-  const currentTheme = settings.theme || 'light';
+  const [isSpeaking, setIsSpeaking] = useState(false);
+
+  const currentTheme = settings.theme || 'dark';
   const currentFont = settings.fontSize || 'medium';
 
   const fontLevels = [
@@ -23,6 +24,77 @@ export default function AccessibilityBar() {
     { id: 'xlarge', label: 'Baixíssima Visão (165%)', short: 'A++' },
     { id: 'huge', label: 'Máxima (200%)', short: 'MAX' },
   ];
+
+  // ── Text-to-Speech (TTS — Leitor de Tela) ─────────────────────────
+  const handleReadPage = () => {
+    if (!('speechSynthesis' in window)) {
+      toast.error('Seu navegador não suporta síntese de voz (TTS).');
+      return;
+    }
+
+    if (isSpeaking) {
+      window.speechSynthesis.cancel();
+      setIsSpeaking(false);
+      toast('Leitura em voz alta pausada.', { icon: '⏹️' });
+      return;
+    }
+
+    // Extract text from the page content
+    const contentEl = document.querySelector('.page-content') || document.body;
+    // Get headings, paragraphs, and cards text
+    const textNodes = contentEl.querySelectorAll('h1, h2, h3, p, .task-title, .stat-value, .alert');
+    let textToRead = '';
+
+    if (textNodes.length > 0) {
+      const parts = [];
+      textNodes.forEach(node => {
+        const text = node.innerText?.trim();
+        if (text && text.length > 1 && !parts.includes(text)) {
+          parts.push(text);
+        }
+      });
+      textToRead = parts.slice(0, 15).join('. '); // Read up to 15 key blocks
+    } else {
+      textToRead = contentEl.innerText?.slice(0, 500) || 'Página sem texto para leitura.';
+    }
+
+    if (!textToRead.trim()) {
+      toast.error('Nenhum texto encontrado para leitura.');
+      return;
+    }
+
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(textToRead);
+    utterance.lang = 'pt-BR';
+    utterance.rate = 1.0;
+
+    const voices = window.speechSynthesis.getVoices();
+    const ptVoice = voices.find(v => v.lang.includes('pt-BR') || v.lang.includes('pt'));
+    if (ptVoice) utterance.voice = ptVoice;
+
+    utterance.onstart = () => {
+      setIsSpeaking(true);
+      toast.success('🔊 Lendo conteúdo da página em voz alta...');
+    };
+
+    utterance.onend = () => {
+      setIsSpeaking(false);
+    };
+
+    utterance.onerror = () => {
+      setIsSpeaking(false);
+    };
+
+    window.speechSynthesis.speak(utterance);
+  };
+
+  useEffect(() => {
+    return () => {
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
+    };
+  }, []);
 
   return (
     <div
@@ -38,7 +110,7 @@ export default function AccessibilityBar() {
             <span>Acessibilidade AEE</span>
           </span>
           <span className="a11y-desc d-none-mobile">
-            Ajustes para Baixa Visão, Alto Contraste e Baixa Audição
+            Ajustes visuais, auditivos e neurodiversos
           </span>
         </div>
 
@@ -64,14 +136,42 @@ export default function AccessibilityBar() {
 
           <div className="a11y-divider" aria-hidden="true" />
 
-          {/* Contrast Controls */}
-          <div className="a11y-group" role="group" aria-label="Contraste de cor">
-            <span className="a11y-label d-none-tablet">Contraste:</span>
+          {/* Theme & Contrast Controls */}
+          <div className="a11y-group" role="group" aria-label="Tema e Contraste">
+            <span className="a11y-label d-none-tablet">Tema:</span>
+
+            {/* Dark mode button */}
             <button
               type="button"
-              onClick={() => updateSettings({ theme: currentTheme === 'highcontrast' ? 'light' : 'highcontrast' })}
+              onClick={() => updateSettings({ theme: 'dark' })}
+              className={`a11y-btn ${currentTheme === 'dark' ? 'active' : ''}`}
+              title="Modo Escuro (Menor cansaço visual)"
+              aria-label="Modo Escuro"
+              aria-pressed={currentTheme === 'dark'}
+            >
+              <Moon size={13} aria-hidden="true" />
+              <span>Escuro</span>
+            </button>
+
+            {/* Light mode button */}
+            <button
+              type="button"
+              onClick={() => updateSettings({ theme: 'light' })}
+              className={`a11y-btn ${currentTheme === 'light' ? 'active' : ''}`}
+              title="Modo Claro (Padrão)"
+              aria-label="Modo Claro"
+              aria-pressed={currentTheme === 'light'}
+            >
+              <Sun size={13} aria-hidden="true" />
+              <span className="d-none-mobile">Claro</span>
+            </button>
+
+            {/* High contrast Yellow */}
+            <button
+              type="button"
+              onClick={() => updateSettings({ theme: 'highcontrast' })}
               className={`a11y-btn a11y-btn-contrast-yellow ${currentTheme === 'highcontrast' ? 'active' : ''}`}
-              title="Alto Contraste Amarelo sobre Preto (Máxima distinção visual)"
+              title="Alto Contraste Amarelo sobre Preto (Máxima distinção visual AEE)"
               aria-label="Alto contraste preto e amarelo"
               aria-pressed={currentTheme === 'highcontrast'}
             >
@@ -79,22 +179,36 @@ export default function AccessibilityBar() {
               <span>Alto Contraste</span>
             </button>
 
+            {/* High contrast White/Black */}
             <button
               type="button"
-              onClick={() => updateSettings({ theme: currentTheme === 'highcontrast-white' ? 'light' : 'highcontrast-white' })}
+              onClick={() => updateSettings({ theme: 'highcontrast-white' })}
               className={`a11y-btn a11y-btn-contrast-white ${currentTheme === 'highcontrast-white' ? 'active' : ''}`}
               title="Alto Contraste Preto sobre Branco Puro (Sem tons de cinza)"
               aria-label="Alto contraste preto e branco"
               aria-pressed={currentTheme === 'highcontrast-white'}
             >
               <span className="contrast-dot-white" aria-hidden="true" />
-              <span className="d-none-mobile">Contraste P&B</span>
+              <span className="d-none-mobile">P&B</span>
             </button>
           </div>
 
           <div className="a11y-divider" aria-hidden="true" />
 
-          {/* Hearing Impairment Speech-to-Text Button */}
+          {/* Text-To-Speech (TTS — Ouvir Tela em Voz Alta) */}
+          <button
+            type="button"
+            onClick={handleReadPage}
+            className={`a11y-btn a11y-btn-tts ${isSpeaking ? 'active-speaking' : ''}`}
+            title="Leitor de Texto em Voz Alta (TTS — Para estudantes com baixa visão, dislexia ou apoio na leitura)"
+            aria-label={isSpeaking ? 'Parar leitura em voz alta' : 'Ouvir página em voz alta (TTS)'}
+            aria-pressed={isSpeaking}
+          >
+            {isSpeaking ? <VolumeX size={15} color="#e53935" /> : <Volume2 size={15} />}
+            <span>{isSpeaking ? 'Parar Leitura' : 'Ouvir Tela (TTS)'}</span>
+          </button>
+
+          {/* Hearing Impairment Speech-to-Text Button (STT — Legendas ao vivo) */}
           <button
             type="button"
             onClick={() => setIsTranscriptionOpen(prev => !prev)}
@@ -104,7 +218,7 @@ export default function AccessibilityBar() {
             aria-expanded={isTranscriptionOpen}
           >
             <Mic size={15} aria-hidden="true" />
-            <span>Transcrição de Voz (Legendas)</span>
+            <span>Legendas (Audição)</span>
           </button>
 
           {/* Settings shortcut */}
@@ -112,8 +226,8 @@ export default function AccessibilityBar() {
             type="button"
             onClick={() => navigate('/settings')}
             className="a11y-btn a11y-btn-icon"
-            title="Ver todas as configurações de acessibilidade"
-            aria-label="Configurações completas de acessibilidade"
+            title="Configurações completas de acessibilidade"
+            aria-label="Configurações completas"
           >
             <Settings size={15} aria-hidden="true" />
           </button>

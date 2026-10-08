@@ -1333,6 +1333,22 @@ small {
   color: #ffffff;
 }
 
+.a11y-btn-tts {
+  background: #f0fdf4;
+  border-color: #86efac;
+  color: #166534;
+}
+.a11y-btn-tts:hover {
+  background: #dcfce7;
+  border-color: #22c55e;
+}
+.a11y-btn-tts.active-speaking {
+  background: #dc2626 !important;
+  border-color: #b91c1c !important;
+  color: #ffffff !important;
+  animation: pulse 1.2s infinite;
+}
+
 .contrast-dot-yellow {
   width: 10px;
   height: 10px;

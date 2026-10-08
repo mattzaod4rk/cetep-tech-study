@@ -18,6 +18,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { LogOut, GraduationCap, Users, CheckSquare, Clock, AlertTriangle, TrendingUp } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext.jsx';
+import AccessibilityBar from '../../components/accessibility/AccessibilityBar.jsx';
 
 // ─── Demo data ────────────────────────────────────────────────────────────────
 const DEMO_STUDENTS = [
@@ -95,15 +96,16 @@ export default function TeacherDashboard() {
 
         <div style={{ marginLeft: 16 }}>
           <span style={{
-            background: 'hsl(38, 80%, 50%)',
+            background: 'rgba(255, 255, 255, 0.15)',
             color: 'white',
+            border: '1px solid rgba(255, 255, 255, 0.25)',
             fontSize: '0.72rem',
             fontWeight: 700,
-            padding: '3px 10px',
+            padding: '4px 12px',
             borderRadius: 20,
-            letterSpacing: '0.05em',
+            letterSpacing: '0.04em',
           }}>
-            MODO DEMONSTRAÇÃO
+            TURMA PILOTO — AEE 2026
           </span>
         </div>
 
@@ -112,7 +114,7 @@ export default function TeacherDashboard() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div style={{ textAlign: 'right' }}>
             <div style={{ color: 'white', fontSize: '0.85rem', fontWeight: 600 }}>{user?.name}</div>
-            <div style={{ color: 'var(--color-sidebar-text)', fontSize: '0.72rem', opacity: 0.7 }}>Professor</div>
+            <div style={{ color: 'var(--color-sidebar-text)', fontSize: '0.72rem', opacity: 0.7 }}>Professor / AEE</div>
           </div>
           <div style={{ width: 36, height: 36, background: 'var(--color-primary)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 700, fontSize: '0.85rem' }}>
             {initials}
@@ -128,13 +130,15 @@ export default function TeacherDashboard() {
         </div>
       </header>
 
+      {/* ─── Accessibility Bar ──────────────────────── */}
+      <AccessibilityBar />
+
       <div style={{ padding: '32px', maxWidth: 1200, margin: '0 auto' }}>
-        {/* Demo notice */}
-        <div className="alert alert-info" style={{ marginBottom: 28 }}>
-          <TrendingUp size={18} style={{ flexShrink: 0 }} />
+        {/* Pedagogical notice */}
+        <div className="alert alert-info" style={{ marginBottom: 28, background: 'var(--color-bg-subtle)', border: '1px solid var(--color-border)' }}>
+          <TrendingUp size={18} style={{ flexShrink: 0, color: 'var(--color-primary)' }} />
           <div>
-            <strong>Painel de demonstração</strong> — Os dados abaixo são exemplos fictícios para ilustrar como o painel funcionará.
-            Quando integrado a um banco de dados real, exibirá dados reais de todos os alunos da turma.
+            <strong>Acompanhamento Pedagógico AEE</strong> — Visão agregada do desempenho, hábitos de foco e conclusão de atividades dos estudantes da Turma Piloto.
           </div>
         </div>
 
