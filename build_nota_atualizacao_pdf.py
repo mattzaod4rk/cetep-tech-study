@@ -1,0 +1,393 @@
+import os
+import subprocess
+
+html = r"""<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Nota de Atualização — CETEP Tech Study</title>
+<style>
+/* ─── PAGE ─────────────────────────────────────────── */
+@page {
+  size: A4 portrait;
+  margin: 18mm 16mm 20mm 16mm;
+  @bottom-center {
+    content: "CETEP Tech Study  |  Nota de Atualização Técnica (v1.2)  |  Outubro de 2026          Página " counter(page);
+    font-family: Arial, sans-serif;
+    font-size: 7.5pt;
+    color: #555;
+    border-top: 0.5px solid #1a4b8c;
+    padding-top: 4px;
+  }
+}
+
+/* ─── RESET ────────────────────────────────────────── */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: Arial, "Helvetica Neue", Helvetica, sans-serif;
+  font-size: 9.3pt;
+  line-height: 1.48;
+  color: #1a1a1a;
+  background: #fff;
+  text-align: justify;
+}
+
+/* ─── HEADER ───────────────────────────────────────── */
+.header-wrap {
+  border: 1.5px solid #1a4b8c;
+  border-radius: 2px;
+  margin-bottom: 14px;
+  overflow: hidden;
+}
+.header-top {
+  background: #1a4b8c;
+  color: #fff;
+  padding: 6px 12px 5px 12px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.logo-area {
+  flex-shrink: 0;
+  border-right: 1px solid rgba(255,255,255,0.35);
+  padding-right: 12px;
+  text-align: center;
+}
+.logo-area svg { display: block; }
+.school-names { flex: 1; }
+.school-names .line1 {
+  font-size: 12pt;
+  font-weight: bold;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.school-names .line2 {
+  font-size: 8pt;
+  font-weight: normal;
+  opacity: 0.88;
+  margin-top: 1px;
+}
+.school-names .line3 {
+  font-size: 7.5pt;
+  opacity: 0.75;
+  margin-top: 1px;
+}
+.header-meta {
+  display: flex;
+  gap: 0;
+  font-size: 8pt;
+  color: #1a1a1a;
+  background: #f8fafc;
+}
+.meta-cell {
+  flex: 1;
+  padding: 5px 12px 4px 12px;
+  border-right: 1px solid #d0d8ea;
+}
+.meta-cell:last-child { border-right: none; }
+.meta-cell .lbl { font-weight: bold; color: #1a4b8c; display: block; margin-bottom: 1px; }
+
+/* ─── DOC TITLE ────────────────────────────────────── */
+.doc-title {
+  text-align: center;
+  font-size: 13.5pt;
+  font-weight: bold;
+  color: #0f2e6e;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin: 12px 0 3px 0;
+}
+.doc-subtitle {
+  text-align: center;
+  font-size: 9pt;
+  color: #444;
+  margin-bottom: 8px;
+}
+.title-rule {
+  border: none;
+  border-top: 1.5px solid #1a4b8c;
+  margin: 0 0 12px 0;
+}
+
+/* ─── SECTION HEADING ──────────────────────────────── */
+h2 {
+  font-size: 10pt;
+  font-weight: bold;
+  color: #fff;
+  background: #1a4b8c;
+  padding: 4px 9px;
+  margin: 14px 0 6px 0;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  page-break-after: avoid;
+  border-radius: 1px;
+}
+h3 {
+  font-size: 9.3pt;
+  font-weight: bold;
+  color: #0f2e6e;
+  margin: 10px 0 4px 0;
+  padding-bottom: 2px;
+  border-bottom: 0.75px solid #9ab0d6;
+  page-break-after: avoid;
+}
+
+/* ─── PARAGRAPH & LISTS ────────────────────────────── */
+p { margin-bottom: 6px; font-size: 9.1pt; }
+ul.blist { margin: 4px 0 8px 0; }
+ul.blist li {
+  list-style: none;
+  padding-left: 12px;
+  position: relative;
+  margin-bottom: 3px;
+  font-size: 8.8pt;
+}
+ul.blist li::before {
+  content: "•";
+  position: absolute;
+  left: 0;
+  color: #1a4b8c;
+  font-weight: bold;
+}
+
+/* ─── BADGES ───────────────────────────────────────── */
+.tag {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 7.5pt;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-right: 4px;
+}
+.tag-new { background: #e8f5e9; color: #2e7d32; border: 0.5px solid #a5d6a7; }
+.tag-fix { background: #e3f2fd; color: #1565c0; border: 0.5px solid #90caf9; }
+.tag-opt { background: #fff8e1; color: #f57f17; border: 0.5px solid #ffe082; }
+
+/* ─── TABLE ────────────────────────────────────────── */
+table.tbl {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 6px 0 10px 0;
+  font-size: 8.5pt;
+}
+table.tbl th {
+  background: #1a4b8c;
+  color: #fff;
+  padding: 5px 8px;
+  text-align: left;
+  font-size: 8pt;
+  font-weight: bold;
+  border: 1px solid #1a4b8c;
+}
+table.tbl td {
+  padding: 5px 8px;
+  border: 1px solid #c8d4e8;
+  vertical-align: top;
+  color: #1a1a1a;
+}
+table.tbl tr:nth-child(even) td { background: #f0f4fb; }
+
+/* ─── INFO BOXES ───────────────────────────────────── */
+.infobox {
+  border: 0.75px solid #9ab0d6;
+  border-left: 3.5px solid #1a4b8c;
+  background: #f5f8fd;
+  padding: 7px 11px;
+  margin: 8px 0;
+  font-size: 8.6pt;
+}
+.highlightbox {
+  border: 1px solid #1a4b8c;
+  border-left: 4px solid #0f2e6e;
+  background: #eef2fb;
+  padding: 8px 12px;
+  margin: 10px 0;
+  border-radius: 2px;
+}
+.highlightbox strong { color: #0f2e6e; }
+
+/* ─── SIGNATURE ────────────────────────────────────── */
+.sig-section {
+  margin-top: 14px;
+  border: 1px solid #c8d4e8;
+  border-radius: 2px;
+  padding: 10px 14px;
+  background: #fafcff;
+  page-break-inside: avoid;
+}
+.sig-title { font-weight: bold; color: #0f2e6e; font-size: 8.6pt; margin-bottom: 8px; text-transform: uppercase; }
+.sig-grid { display: flex; gap: 20px; }
+.sig-col { flex: 1; }
+.sig-field { margin-bottom: 4px; font-size: 8.2pt; }
+.sig-label { font-weight: bold; color: #1a4b8c; display: block; margin-bottom: 1px; }
+.sig-line { border-bottom: 1px solid #333; margin-top: 22px; margin-bottom: 2px; }
+.sig-sub { font-size: 7.5pt; color: #666; text-align: center; }
+</style>
+</head>
+<body>
+
+<!-- CABEÇALHO INSTITUCIONAL -->
+<div class="header-wrap">
+  <div class="header-top">
+    <div class="logo-area">
+      <svg width="50" height="50" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="50" cy="50" r="44" fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="2"/>
+        <text x="50" y="32" font-size="13" font-family="Arial" font-weight="bold" fill="#fff" text-anchor="middle">CETEP</text>
+        <text x="50" y="44" font-size="6.5" font-family="Arial" fill="rgba(255,255,255,0.8)" text-anchor="middle">RECÔNCAVO II</text>
+        <text x="50" y="54" font-size="7" font-family="Arial" font-weight="bold" fill="#fff" text-anchor="middle">ALBERTO TORRES</text>
+        <line x1="18" y1="60" x2="82" y2="60" stroke="rgba(255,255,255,0.35)" stroke-width="0.8"/>
+        <text x="50" y="70" font-size="5.8" font-family="Arial" fill="rgba(255,255,255,0.7)" text-anchor="middle">Cruz das Almas – BA</text>
+        <text x="50" y="79" font-size="5.5" font-family="Arial" fill="rgba(255,255,255,0.55)" text-anchor="middle">Desde 1948</text>
+      </svg>
+    </div>
+    <div class="school-names">
+      <div class="line1">CETEP Recôncavo II</div>
+      <div class="line2">Centro Territorial de Educação Profissional Recôncavo II Alberto Torres</div>
+      <div class="line3">Cruz das Almas – Bahia &nbsp;|&nbsp; PIBID & Atendimento Educacional Especializado (AEE)</div>
+    </div>
+  </div>
+  <div class="header-meta">
+    <div class="meta-cell"><span class="lbl">Projeto</span>CETEP Tech Study</div>
+    <div class="meta-cell"><span class="lbl">Documento</span>Nota de Atualização (Changelog)</div>
+    <div class="meta-cell"><span class="lbl">Versão</span>Release 1.2 — Sprint AEE</div>
+    <div class="meta-cell"><span class="lbl">Data</span>08 de Outubro de 2026</div>
+  </div>
+</div>
+
+<!-- TÍTULO -->
+<div class="doc-title">Nota de Atualização de Sistema — Versão 1.2</div>
+<div class="doc-subtitle">Relatório técnico das melhorias implementadas em Acessibilidade AEE, Roteamento em Nuvem e Interface Docente</div>
+<hr class="title-rule">
+
+<!-- SEÇÃO 1: RESUMO DO RELEASE -->
+<h2>1. Sumário Executivo do Release</h2>
+<p>A presente Nota de Atualização formaliza as implementações técnicas e pedagógicas integradas à plataforma <strong>CETEP Tech Study</strong> em 08 de outubro de 2026. Este ciclo de desenvolvimento teve como foco a consolidação da <strong>Acessibilidade Integral voltada ao Atendimento Educacional Especializado (AEE)</strong>, a correção de roteamento estático na nuvem (Vercel) e o refinamento do painel docente com vistas à apresentação na <strong>Mostra Pedagógica do CETEP (28 e 29 de outubro de 2026)</strong>.</p>
+
+<!-- SEÇÃO 2: DETALHAMENTO DAS ATUALIZAÇÕES -->
+<h2>2. Detalhamento das Entregas e Modificações</h2>
+
+<table class="tbl">
+  <thead>
+    <tr>
+      <th style="width:18%">Módulo</th>
+      <th style="width:12%">Tipo</th>
+      <th>Descrição Técnica e Impacto Pedagógico</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>Barra AEE Universal</strong></td>
+      <td><span class="tag tag-new">Novo</span></td>
+      <td>Implementação da <strong>Barra de Acessibilidade AEE</strong> fixa no topo de todas as páginas da aplicação (Alunos e Professores), permitindo controle instantâneo de fonte, contraste e áudio sem necessidade de navegação até as configurações.</td>
+    </tr>
+    <tr>
+      <td><strong>Escala Real de Fonte</strong></td>
+      <td><span class="tag tag-opt">Melhoria</span></td>
+      <td>Reestruturação do redimensionamento tipográfico no elemento raiz (<code>html</code>). Agora, a alternância entre <strong>Padrão (100%)</strong>, <strong>Baixa Visão (130%)</strong>, <strong>Baixíssima Visão (165%)</strong> e <strong>Máxima (200% — WCAG AAA)</strong> amplia de forma real e proporcional todos os textos, cartões, formulários e botões em todo o site.</td>
+    </tr>
+    <tr>
+      <td><strong>Alto Contraste Expandido</strong></td>
+      <td><span class="tag tag-new">Novo</span></td>
+      <td>Disponibilização de duas variantes de alto contraste: <strong>Amarelo sobre Preto</strong> (máxima distinção visual AEE) e <strong>Contraste P&B</strong> (Preto sobre Branco puro, eliminando tons de cinza desbotados). Adicionados botões dedicados para retorno imediato aos modos <strong>Escuro</strong> e <strong>Claro</strong>.</td>
+    </tr>
+    <tr>
+      <td><strong>Transcrição de Voz (STT)</strong></td>
+      <td><span class="tag tag-new">Novo</span></td>
+      <td>Módulo de <strong>Legendas em Tempo Real</strong> para estudantes com baixa audição. Utiliza a Web Speech API para captar o áudio do professor via microfone e transcrever a fala instantaneamente com letras ampliadas, indicador visual de ondas sonoras e opção de cópia.</td>
+    </tr>
+    <tr>
+      <td><strong>Leitor de Tela (TTS)</strong></td>
+      <td><span class="tag tag-new">Novo</span></td>
+      <td>Implementação do botão <strong>"Ouvir Tela (TTS)"</strong> na barra de acessibilidade, utilizando síntese de voz nativa (<code>speechSynthesis</code> em pt-BR) para leitura audível de títulos, prazos e tarefas. Atende estudantes com baixa visão, dislexia e suporte à atenção no TDAH.</td>
+    </tr>
+    <tr>
+      <td><strong>Correção Roteamento F5</strong></td>
+      <td><span class="tag tag-fix">Correção</span></td>
+      <td>Criação do arquivo de configuração <code>vercel.json</code> com reescrita global de rotas (<code>rewrites: [/(.*) -&gt; /index.html]</code>). Solucionou definitivamente o erro de tela preta <em>404 NOT FOUND</em> ao atualizar a página (F5) em rotas diretas na Vercel.</td>
+    </tr>
+    <tr>
+      <td><strong>Painel do Professor</strong></td>
+      <td><span class="tag tag-opt">Refinamento</span></td>
+      <td>Substituição do indicativo provisório pelo distintivo oficial <strong>TURMA PILOTO — AEE 2026</strong>. O alerta genérico de "dados fictícios" foi substituído por uma visão integrada de acompanhamento pedagógico. Barra de acessibilidade incorporada também na visão docente.</td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- SEÇÃO 3: IMPACTO PEDAGÓGICO E INCLUSÃO NO AEE -->
+<h2>3. Alinhamento Pedagógico e Benefícios ao AEE</h2>
+<div class="highlightbox">
+  <strong>Convergência entre Neurodiversidade e Tecnologia Assistiva:</strong>
+  <p style="margin:4px 0 0 0; font-size:8.8pt;">
+    As melhorias entregues transformam o CETEP Tech Study em uma plataforma verdadeiramente inclusiva, atendendo com rigor técnico e sensibilidade às diretrizes do Atendimento Educacional Especializado:
+  </p>
+  <ul class="blist" style="margin-top:4px;">
+    <li><strong>Baixa e Baixíssima Visão:</strong> Acesso garantido com fontes ampliadas de até 200% sem perda de legibilidade ou quebra estrutural de cartões.</li>
+    <li><strong>Sensibilidade Sensorial (TEA e Fotofobia):</strong> Alternância fluida entre fundo escuro balanceado, alto contraste preto/amarelo ou branco puro.</li>
+    <li><strong>Deficiência Auditiva / Hipoacusia:</strong> Legendas dinâmicas em sala de aula diminuem a barreira na comunicação oral expositiva.</li>
+    <li><strong>TDAH e Dislexia:</strong> Apoio multimodal (ler e ouvir simultaneamente com o recurso TTS) fortalece a fixação e o foco em tarefas longas.</li>
+  </ul>
+</div>
+
+<!-- SEÇÃO 4: INTEGRIDADE DO CÓDIGO E AMBIENTES -->
+<h2>4. Estado dos Ambientes e Versionamento</h2>
+<p>Todos os artefatos técnicos foram integrados com sucesso e encontram-se plenamente operacionais:</p>
+<ul class="blist">
+  <li><strong>Repositório GitHub:</strong> Commits <code>34454c9</code> e <code>d1c9a87</code> integrados com sucesso à branch principal (<code>main</code>).</li>
+  <li><strong>Ambiente de Nuvem (Vercel):</strong> Deploy contínuo ativado automaticamente com HTTPS e suporte a atualização (F5).</li>
+  <li><strong>Pacote Offline (Pendrive):</strong> Arquivo <code>cetep_tech_study_codigo.zip</code> atualizado para testes no laboratório da escola.</li>
+</ul>
+
+<!-- SEÇÃO 5: ASSINATURAS E REGISTRO -->
+<div class="sig-section">
+  <div class="sig-title">Registro e Ciência Técnica</div>
+  <div class="sig-grid">
+    <div class="sig-col">
+      <div class="sig-field">
+        <span class="sig-label">Responsável Técnico / Desenvolvedor</span>
+        <div style="font-weight:bold; font-size:9pt; margin-top:2px;">Matheus de Jesus Nascimento</div>
+        <div style="font-size:7.8pt; color:#555;">Bolsista PIBID / Apoio ao AEE — CETEP Recôncavo II</div>
+        <div class="sig-line"></div>
+        <div class="sig-sub">Assinatura</div>
+      </div>
+    </div>
+    <div class="sig-col">
+      <div class="sig-field">
+        <span class="sig-label">Coordenação Pedagógica / AEE</span>
+        <div style="font-weight:bold; font-size:9pt; margin-top:2px;">Profª. Patrícia (Patty)</div>
+        <div style="font-size:7.8pt; color:#555;">Idealização e Apoio Pedagógico — CETEP Recôncavo II</div>
+        <div class="sig-line"></div>
+        <div class="sig-sub">Ciência e Recebimento</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
+"""
+
+html_path = os.path.abspath(r"C:\Users\mathe\.gemini\antigravity\scratch\cetep-tech-study\nota_atualizacao_cetep_tech_study.html")
+pdf_path  = os.path.abspath(r"C:\Users\mathe\.gemini\antigravity\scratch\cetep-tech-study\nota_atualizacao_cetep_tech_study.pdf")
+
+with open(html_path, "w", encoding="utf-8") as f:
+    f.write(html)
+
+browser = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
+res = subprocess.run([
+    browser,
+    "--headless",
+    "--disable-gpu",
+    "--no-pdf-header-footer",
+    f"--print-to-pdf={pdf_path}",
+    f"file:///{html_path.replace(os.sep, '/')}",
+], capture_output=True, text=True)
+
+print("Exit code:", res.returncode)
+print("Stderr:", res.stderr[:300] if res.stderr else "—")
+exists = os.path.exists(pdf_path)
+print(f"PDF exists: {exists}")
+if exists:
+    size = os.path.getsize(pdf_path)
+    print(f"PDF size: {size:,} bytes ({size/1024:.1f} KB)")
