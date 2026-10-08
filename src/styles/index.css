@@ -8,7 +8,11 @@
 
 /* ── CSS Reset ────────────────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+html {
+  font-size: calc(16px * var(--font-scale, 1));
+  scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+}
 img, svg, video { display: block; max-width: 100%; }
 button, input, select, textarea { font: inherit; border: none; background: none; outline: none; }
 a { text-decoration: none; color: inherit; }
@@ -110,7 +114,7 @@ ul, ol { list-style: none; }
   --shadow-glow:0 4px 20px -2px hsla(224, 85%, 65%, 0.4);
 }
 
-/* ── High Contrast Theme (Accessibility) ──────────────────────────────────── */
+/* ── High Contrast Theme (Amarelo sobre Preto - Máximo Contraste AEE) ─────── */
 [data-theme='highcontrast'] {
   --font-heading:        'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
   --font-body:           'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
@@ -128,29 +132,71 @@ ul, ol { list-style: none; }
   --color-danger-light:  hsl(0, 60%, 10%);
   --color-info:          hsl(195, 100%, 60%);
   --color-info-light:    hsl(195, 60%, 10%);
-  --color-bg:            hsl(0, 0%, 0%);
-  --color-bg-card:       hsl(0, 0%, 8%);
-  --color-bg-input:      hsl(0, 0%, 6%);
-  --color-bg-hover:      hsl(0, 0%, 16%);
-  --color-bg-subtle:     hsl(0, 0%, 12%);
-  --color-text:          hsl(0, 0%, 100%);
-  --color-text-secondary:hsl(55, 100%, 75%);
-  --color-text-muted:    hsl(55, 60%, 60%);
-  --color-text-disabled: hsl(0, 0%, 48%);
-  --color-border:        hsl(55, 100%, 55%);
-  --color-border-subtle: hsl(55, 100%, 40%);
-  --color-border-focus:  hsl(55, 100%, 75%);
-  --color-sidebar-bg:    hsl(0, 0%, 0%);
-  --color-sidebar-surface:hsl(0, 0%, 10%);
-  --color-sidebar-text:  hsl(0, 0%, 92%);
-  --color-sidebar-active:hsl(55, 100%, 55%);
-  --shadow-glow:         0 0 16px hsl(55, 100%, 55%);
+  --color-bg:            #000000;
+  --color-bg-card:       #0a0a0a;
+  --color-bg-input:      #050505;
+  --color-bg-hover:      #1a1a1a;
+  --color-bg-subtle:     #141414;
+  --color-text:          #ffffff;
+  --color-text-secondary:#ffff55;
+  --color-text-muted:    #e0e0e0;
+  --color-text-disabled: #888888;
+  --color-border:        #ffff00;
+  --color-border-subtle: #ffd600;
+  --color-border-focus:  #00ffff;
+  --color-sidebar-bg:    #000000;
+  --color-sidebar-surface:#0d0d0d;
+  --color-sidebar-text:  #ffffff;
+  --color-sidebar-active:#ffff00;
+  --shadow-glow:         0 0 16px #ffff00;
 }
 
-/* ── Font Size Scale ──────────────────────────────────────────────────────── */
-[data-font-size='small']  { --font-scale: 0.875; }
-[data-font-size='medium'] { --font-scale: 1; }
-[data-font-size='large']  { --font-scale: 1.2; }
+/* ── High Contrast Theme (Preto sobre Branco Puro - Sem tons de cinza) ─────── */
+[data-theme='highcontrast-white'] {
+  --font-heading:        'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-body:           'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+
+  --color-primary:       #000000;
+  --color-primary-dark:  #000000;
+  --color-primary-darker:#000000;
+  --color-primary-light: #ececec;
+  --color-primary-muted: #e0e0e0;
+  --color-success:       #006400;
+  --color-success-light: #e8f5e9;
+  --color-warning:       #b75500;
+  --color-warning-light: #fff3e0;
+  --color-danger:        #b71c1c;
+  --color-danger-light:  #ffebee;
+  --color-info:          #01579b;
+  --color-info-light:    #e1f5fe;
+  --color-bg:            #ffffff;
+  --color-bg-card:       #ffffff;
+  --color-bg-input:      #ffffff;
+  --color-bg-hover:      #f0f0f0;
+  --color-bg-subtle:     #f5f5f5;
+  --color-text:          #000000;
+  --color-text-secondary:#000000;
+  --color-text-muted:    #1a1a1a;
+  --color-text-disabled: #444444;
+  --color-border:        #000000;
+  --color-border-subtle: #000000;
+  --color-border-focus:  #0000ee;
+  --color-sidebar-bg:    #000000;
+  --color-sidebar-surface:#111111;
+  --color-sidebar-text:  #ffffff;
+  --color-sidebar-active:#ffff00;
+  --shadow-glow:         0 0 0 3px #000000;
+}
+
+/* ── Font Size Scale (Apoio Real a Baixa e Baixíssima Visão) ──────────────── */
+:root {
+  --font-scale: 1;
+}
+[data-font-size='small']      { --font-scale: 0.90; }
+[data-font-size='medium']     { --font-scale: 1.0; }
+[data-font-size='large']      { --font-scale: 1.30; } /* Baixa Visão (+30%) */
+[data-font-size='xlarge']     { --font-scale: 1.65; } /* Baixíssima Visão (+65%) */
+[data-font-size='huge']       { --font-scale: 2.00; } /* Visão Severa (200% Zoom WCAG) */
 
 /* ── Typography Scale & Contrast ──────────────────────────────────────────── */
 body {
@@ -1158,4 +1204,230 @@ small {
 @media (min-width: 769px) and (max-width: 1080px) {
   .grid-3, .grid-4 { grid-template-columns: repeat(2, 1fr); }
   .page-content { padding: 28px 28px; }
+}
+
+/* ─── AEE Accessibility System & Toolbar ───────────────────────────────────── */
+.accessibility-bar {
+  background: var(--color-bg-card);
+  border-bottom: 2px solid var(--color-border);
+  padding: 8px 24px;
+  position: sticky;
+  top: 0;
+  z-index: 90;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+}
+
+.accessibility-bar-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.a11y-badge-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.a11y-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--color-primary-light);
+  color: var(--color-primary-dark);
+  padding: 4px 10px;
+  border-radius: 99px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  border: 1px solid var(--color-border);
+}
+
+.a11y-desc {
+  font-size: 0.78rem;
+  color: var(--color-text-secondary);
+}
+
+.a11y-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.a11y-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.a11y-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  margin-right: 4px;
+}
+
+.a11y-divider {
+  width: 1px;
+  height: 20px;
+  background: var(--color-border);
+  margin: 0 4px;
+}
+
+.a11y-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border-radius: 8px;
+  border: 1.5px solid var(--color-border);
+  background: var(--color-bg-subtle);
+  color: var(--color-text);
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  line-height: 1;
+}
+
+.a11y-btn:hover {
+  background: var(--color-bg-hover);
+  border-color: var(--color-primary);
+  transform: translateY(-1px);
+}
+
+.a11y-btn.active {
+  background: var(--color-primary);
+  color: #ffffff;
+  border-color: var(--color-primary-dark);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+}
+
+.a11y-btn-contrast-yellow.active {
+  background: #000000 !important;
+  color: #ffff00 !important;
+  border-color: #ffff00 !important;
+  outline: 2px solid #ffff00 !important;
+}
+
+.a11y-btn-contrast-white.active {
+  background: #ffffff !important;
+  color: #000000 !important;
+  border-color: #000000 !important;
+  outline: 2px solid #000000 !important;
+}
+
+.a11y-btn-voice {
+  background: #eef2ff;
+  border-color: #818cf8;
+  color: #4338ca;
+}
+.a11y-btn-voice.active {
+  background: #4338ca;
+  color: #ffffff;
+}
+
+.contrast-dot-yellow {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #ffff00;
+  border: 1px solid #000000;
+}
+
+.contrast-dot-white {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: 1px solid #000000;
+}
+
+.a11y-btn-icon {
+  padding: 6px;
+}
+
+/* Audio wave animation for live speech transcription */
+.audio-wave-bar {
+  display: inline-block;
+  width: 3px;
+  height: 14px;
+  background: #ffea00;
+  border-radius: 2px;
+  animation: audioWave 0.8s ease-in-out infinite alternate;
+}
+
+@keyframes audioWave {
+  0% { height: 4px; }
+  100% { height: 18px; }
+}
+
+/* ─── Specific High-Contrast Overrides ─────────────────────────────────────── */
+[data-theme^='highcontrast'] {
+  --shadow-xs: none;
+  --shadow-sm: none;
+  --shadow-md: none;
+  --shadow-lg: none;
+  --shadow-xl: none;
+}
+
+[data-theme^='highcontrast'] .card,
+[data-theme^='highcontrast'] .stat-card,
+[data-theme^='highcontrast'] .task-item,
+[data-theme^='highcontrast'] .btn,
+[data-theme^='highcontrast'] .form-input,
+[data-theme^='highcontrast'] .form-select,
+[data-theme^='highcontrast'] .modal,
+[data-theme^='highcontrast'] .alert,
+[data-theme^='highcontrast'] .sidebar,
+[data-theme^='highcontrast'] .accessibility-bar {
+  border-width: 2px !important;
+  border-style: solid !important;
+}
+
+[data-theme^='highcontrast'] *:focus-visible {
+  outline: 4px solid var(--color-border-focus) !important;
+  outline-offset: 3px !important;
+}
+
+[data-theme^='highcontrast'] .badge {
+  border: 1.5px solid currentColor !important;
+  font-weight: 800 !important;
+}
+
+/* ─── Low and Very Low Vision Adaptations ──────────────────────────────────── */
+[data-font-size='xlarge'] .btn,
+[data-font-size='huge'] .btn {
+  padding: 12px 24px;
+  min-height: 48px;
+}
+
+[data-font-size='xlarge'] .form-input,
+[data-font-size='xlarge'] .form-select,
+[data-font-size='huge'] .form-input,
+[data-font-size='huge'] .form-select {
+  padding: 12px 16px;
+  min-height: 48px;
+}
+
+[data-font-size='huge'] .app-shell {
+  overflow-y: auto;
+}
+
+[data-font-size='huge'] .sidebar {
+  width: 280px;
+}
+
+@media (max-width: 900px) {
+  .d-none-tablet { display: none !important; }
+}
+@media (max-width: 640px) {
+  .d-none-mobile { display: none !important; }
+  .accessibility-bar { padding: 6px 12px; }
 }

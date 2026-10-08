@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Download, Upload, Sun, Moon, Monitor, Type, User, Lock, Trash2 } from 'lucide-react';
+import { Download, Upload, Sun, Moon, Monitor, Type, User, Lock, Trash2, Eye, Mic, Volume2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { useApp } from '../contexts/AppContext.jsx';
 import * as DataService from '../services/DataService.js';
@@ -7,7 +7,7 @@ import toast from 'react-hot-toast';
 
 export default function SettingsPage() {
   const { user, updateProfile, logout } = useAuth();
-  const { settings, updateSettings } = useApp();
+  const { settings, updateSettings, setIsTranscriptionOpen } = useApp();
   const fileRef = useRef();
 
   const [profileForm, setProfileForm] = useState({ name: user?.name || '', email: user?.email || '' });
@@ -39,7 +39,6 @@ export default function SettingsPage() {
     if (passwordForm.newPass !== passwordForm.confirm) { toast.error('As senhas não coincidem.'); return; }
     setPasswordLoading(true);
     try {
-      // Verify current password then update
       await DataService.login({ email: user.email, password: passwordForm.current });
       await updateProfile({ password: passwordForm.newPass });
       setPasswordForm({ current: '', newPass: '', confirm: '' });
@@ -88,7 +87,6 @@ export default function SettingsPage() {
 
   // ── Delete account ────────────────────────────────────
   const handleDeleteAccount = () => {
-    // Clear all user data
     const keys = ['cetep_tasks', 'cetep_agenda', 'cetep_focus_sessions', 'cetep_gamification', 'cetep_settings'];
     keys.forEach(key => {
       try {
@@ -97,7 +95,6 @@ export default function SettingsPage() {
         localStorage.setItem(key, JSON.stringify(all));
       } catch {}
     });
-    // Remove from users list
     const users = JSON.parse(localStorage.getItem('cetep_users') || '[]');
     const filtered = users.filter(u => u.id !== user.id);
     localStorage.setItem('cetep_users', JSON.stringify(filtered));
@@ -106,73 +103,67 @@ export default function SettingsPage() {
   };
 
   const THEME_OPTIONS = [
-    { value: 'light', label: 'Claro', icon: <Sun size={18} /> },
-    { value: 'dark', label: 'Escuro', icon: <Moon size={18} /> },
-    { value: 'highcontrast', label: 'Alto Contraste', icon: <Monitor size={18} /> },
+    { value: 'light', label: 'Claro (Padrão)', icon: <Sun size={18} />, desc: 'Interface moderna e balanceada' },
+    { value: 'dark', label: 'Escuro', icon: <Moon size={18} />, desc: 'Menor cansaço visual à noite' },
+    { value: 'highcontrast', label: 'Alto Contraste Amarelo', icon: <Monitor size={18} />, desc: 'Preto & Amarelo (Máxima distinção visual AEE)' },
+    { value: 'highcontrast-white', label: 'Alto Contraste Branco', icon: <Sun size={18} />, desc: 'Preto & Branco puro (Sem tons de cinza)' },
   ];
 
   const FONT_OPTIONS = [
-    { value: 'small', label: 'Pequeno' },
-    { value: 'medium', label: 'Médio' },
-    { value: 'large', label: 'Grande' },
+    { value: 'medium', label: 'Padrão (100%)', badge: 'Normal', desc: 'Proporção padrão' },
+    { value: 'large', label: 'Grande (130%)', badge: 'Baixa Visão', desc: 'Aumento real e nítido' },
+    { value: 'xlarge', label: 'Muito Grande (165%)', badge: 'Baixíssima Visão', desc: 'Ampliação para dificuldade visual acentuada' },
+    { value: 'huge', label: 'Máxima (200%)', badge: 'WCAG AAA', desc: 'Dobro do tamanho com adaptação de layout' },
   ];
 
   return (
-    <div style={{ maxWidth: 700 }}>
+    <div style={{ maxWidth: 760 }}>
       <div className="page-header">
         <div className="page-header-left">
-          <h1>Configurações</h1>
-          <p>Personalize sua experiência no CETEP Tech Study.</p>
+          <h1>Configurações e Acessibilidade</h1>
+          <p>Personalize sua experiência no CETEP Tech Study com recursos inclusivos do AEE.</p>
         </div>
       </div>
 
-      {/* ─── Profile ─────────────────────────────── */}
-      <Section title="👤 Perfil" icon={<User size={18} />}>
-        <form onSubmit={handleProfileSave}>
-          <div className="grid-2">
-            <div className="form-group">
-              <label className="form-label" htmlFor="settings-name">Nome</label>
-              <input id="settings-name" className="form-input" value={profileForm.name} onChange={e => setProfileForm(f => ({ ...f, name: e.target.value }))} />
+      {/* ─── AEE & Accessibility Focus Section ──────────────── */}
+      <Section title="♿ Acessibilidade e Apoio AEE" icon={<Eye size={18} />}>
+        {/* Hearing Impairment Speech Transcription */}
+        <div style={{
+          background: 'var(--color-bg-subtle)',
+          border: '2px solid var(--color-border)',
+          borderRadius: '12px',
+          padding: '16px 18px',
+          marginBottom: '20px'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap' }}>
+            <div style={{ flex: 1, minWidth: '240px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                <Mic size={20} color="var(--color-primary)" />
+                <strong style={{ fontSize: '1rem', color: 'var(--color-text)' }}>
+                  Transcrição de Voz ao Vivo (Para Baixa Audição)
+                </strong>
+              </div>
+              <p style={{ fontSize: '0.88rem', color: 'var(--color-text-secondary)', margin: 0, lineHeight: 1.5 }}>
+                Legenda instantânea via microfone para estudantes com perda auditiva acompanharem aulas expositivas do professor e discussões em grupo em tempo real.
+              </p>
             </div>
-            <div className="form-group">
-              <label className="form-label" htmlFor="settings-email">E-mail</label>
-              <input id="settings-email" type="email" className="form-input" value={profileForm.email} onChange={e => setProfileForm(f => ({ ...f, email: e.target.value }))} />
-            </div>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => setIsTranscriptionOpen(true)}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap' }}
+            >
+              <Mic size={16} /> Abrir Transcrição / Legenda
+            </button>
           </div>
-          <button type="submit" className="btn btn-primary" disabled={profileLoading} id="settings-profile-save-btn">
-            {profileLoading ? 'Salvando...' : 'Salvar perfil'}
-          </button>
-        </form>
-      </Section>
+        </div>
 
-      {/* ─── Password ────────────────────────────── */}
-      <Section title="🔒 Alterar senha" icon={<Lock size={18} />}>
-        <form onSubmit={handlePasswordSave}>
-          <div className="form-group">
-            <label className="form-label" htmlFor="settings-curr-pass">Senha atual</label>
-            <input id="settings-curr-pass" type="password" className="form-input" value={passwordForm.current} onChange={e => setPasswordForm(f => ({ ...f, current: e.target.value }))} placeholder="••••••" />
-          </div>
-          <div className="grid-2">
-            <div className="form-group">
-              <label className="form-label" htmlFor="settings-new-pass">Nova senha</label>
-              <input id="settings-new-pass" type="password" className="form-input" value={passwordForm.newPass} onChange={e => setPasswordForm(f => ({ ...f, newPass: e.target.value }))} placeholder="Mín. 6 caracteres" />
-            </div>
-            <div className="form-group">
-              <label className="form-label" htmlFor="settings-confirm-pass">Confirmar senha</label>
-              <input id="settings-confirm-pass" type="password" className="form-input" value={passwordForm.confirm} onChange={e => setPasswordForm(f => ({ ...f, confirm: e.target.value }))} placeholder="Repita a nova senha" />
-            </div>
-          </div>
-          <button type="submit" className="btn btn-primary" disabled={passwordLoading} id="settings-password-save-btn">
-            {passwordLoading ? 'Alterando...' : 'Alterar senha'}
-          </button>
-        </form>
-      </Section>
-
-      {/* ─── Theme ───────────────────────────────── */}
-      <Section title="🎨 Aparência" icon={<Sun size={18} />}>
-        <div className="form-group">
-          <label className="form-label">Tema</label>
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+        {/* High Contrast Choices */}
+        <div className="form-group" style={{ marginBottom: 22 }}>
+          <label className="form-label" style={{ fontSize: '0.95rem', fontWeight: 700, marginBottom: 8, display: 'block' }}>
+            🎨 Opções de Contraste e Tema
+          </label>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10 }}>
             {THEME_OPTIONS.map(opt => (
               <button
                 key={opt.value}
@@ -180,26 +171,32 @@ export default function SettingsPage() {
                 onClick={() => updateSettings({ theme: opt.value })}
                 id={`settings-theme-${opt.value}`}
                 style={{
-                  display: 'flex', alignItems: 'center', gap: 8,
-                  padding: '10px 16px', borderRadius: 10,
+                  display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 6,
+                  padding: '12px 14px', borderRadius: 10,
                   border: `2px solid ${settings.theme === opt.value ? 'var(--color-primary)' : 'var(--color-border)'}`,
                   background: settings.theme === opt.value ? 'var(--color-primary-light)' : 'var(--color-bg-input)',
                   color: settings.theme === opt.value ? 'var(--color-primary)' : 'var(--color-text)',
-                  fontWeight: 600, cursor: 'pointer', transition: 'all 0.15s',
+                  cursor: 'pointer', textAlign: 'left', transition: 'all 0.15s',
                 }}
               >
-                {opt.icon} {opt.label}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, fontSize: '0.92rem' }}>
+                  {opt.icon} {opt.label}
+                </div>
+                <small style={{ fontSize: '0.78rem', opacity: 0.8, color: 'inherit' }}>
+                  {opt.desc}
+                </small>
               </button>
             ))}
           </div>
         </div>
 
+        {/* Low and Very Low Vision Real Font Scale */}
         <div className="form-group" style={{ marginBottom: 0 }}>
-          <label className="form-label">
-            <Type size={14} style={{ display: 'inline', marginRight: 4 }} />
-            Tamanho da fonte (acessibilidade)
+          <label className="form-label" style={{ fontSize: '0.95rem', fontWeight: 700, marginBottom: 8, display: 'block' }}>
+            <Type size={16} style={{ display: 'inline', marginRight: 6, verticalAlign: 'middle' }} />
+            Tamanho da Fonte (Baixa e Baixíssima Visão)
           </label>
-          <div style={{ display: 'flex', gap: 10 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10 }}>
             {FONT_OPTIONS.map(opt => (
               <button
                 key={opt.value}
@@ -207,23 +204,30 @@ export default function SettingsPage() {
                 onClick={() => updateSettings({ fontSize: opt.value })}
                 id={`settings-font-${opt.value}`}
                 style={{
-                  flex: 1, padding: '10px 8px', borderRadius: 10,
+                  display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4,
+                  padding: '12px 14px', borderRadius: 10,
                   border: `2px solid ${settings.fontSize === opt.value ? 'var(--color-primary)' : 'var(--color-border)'}`,
                   background: settings.fontSize === opt.value ? 'var(--color-primary-light)' : 'var(--color-bg-input)',
                   color: settings.fontSize === opt.value ? 'var(--color-primary)' : 'var(--color-text)',
-                  fontWeight: 600, cursor: 'pointer', transition: 'all 0.15s',
-                  fontSize: opt.value === 'small' ? '0.82rem' : opt.value === 'large' ? '1.05rem' : '0.95rem',
+                  cursor: 'pointer', textAlign: 'left', transition: 'all 0.15s',
                 }}
               >
-                {opt.label}
+                <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
+                  <span style={{ fontWeight: 800, fontSize: '0.95rem' }}>{opt.label}</span>
+                  <span className="badge badge-primary" style={{ fontSize: '0.68rem', padding: '2px 6px' }}>{opt.badge}</span>
+                </div>
+                <small style={{ fontSize: '0.76rem', color: 'inherit', opacity: 0.8 }}>
+                  {opt.desc}
+                </small>
               </button>
             ))}
           </div>
-          <p style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', marginTop: 8 }}>
-            Acessível para diferentes necessidades visuais. Recomendado "Grande" para baixa visão.
+          <p style={{ fontSize: '0.82rem', color: 'var(--color-text-secondary)', marginTop: 10 }}>
+            ✨ <strong>Efeito Real:</strong> Ao selecionar "Baixa Visão" ou "Baixíssima Visão", todos os textos, botões, formulários e cartões do site ampliam proporcionalmente em toda a plataforma.
           </p>
         </div>
       </Section>
+
 
       {/* ─── Export / Import ─────────────────────── */}
       <Section title="💾 Portabilidade de dados">

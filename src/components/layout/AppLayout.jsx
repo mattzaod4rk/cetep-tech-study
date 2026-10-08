@@ -2,10 +2,12 @@ import React from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, CheckSquare, Calendar, Timer,
-  TrendingUp, Settings, LogOut, GraduationCap
+  TrendingUp, Settings, LogOut, GraduationCap, Mic
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext.jsx';
 import { useApp } from '../../contexts/AppContext.jsx';
+import AccessibilityBar from '../accessibility/AccessibilityBar.jsx';
+import LiveTranscriptionModal from '../accessibility/LiveTranscriptionModal.jsx';
 
 const NAV_ITEMS = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
@@ -18,7 +20,7 @@ const NAV_ITEMS = [
 
 export default function AppLayout() {
   const { user, logout } = useAuth();
-  const { gamification } = useApp();
+  const { gamification, isTranscriptionOpen, setIsTranscriptionOpen } = useApp();
   const navigate = useNavigate();
 
   const handleLogout = () => {
@@ -99,10 +101,17 @@ export default function AppLayout() {
 
       {/* ── Main Content ─────────────────────────────────── */}
       <div className="main-content">
+        <AccessibilityBar />
         <div className="page-content">
           <Outlet />
         </div>
       </div>
+
+      {/* ── Live Voice Transcription Modal (AEE) ─────────── */}
+      <LiveTranscriptionModal
+        isOpen={isTranscriptionOpen}
+        onClose={() => setIsTranscriptionOpen(false)}
+      />
 
       {/* ── Mobile Bottom Nav ────────────────────────────── */}
       <nav className="bottom-nav" aria-label="Navegação mobile">
@@ -118,6 +127,17 @@ export default function AppLayout() {
               {label === 'Configurações' ? 'Config.' : label}
             </NavLink>
           ))}
+          {/* Quick Voice Transcription button on mobile */}
+          <button
+            type="button"
+            onClick={() => setIsTranscriptionOpen(prev => !prev)}
+            className={`bottom-nav-item ${isTranscriptionOpen ? 'active' : ''}`}
+            aria-label="Legendas de voz ao vivo"
+            style={{ color: isTranscriptionOpen ? '#4338ca' : undefined }}
+          >
+            <Mic size={22} aria-hidden="true" />
+            Legenda
+          </button>
         </div>
       </nav>
     </div>
