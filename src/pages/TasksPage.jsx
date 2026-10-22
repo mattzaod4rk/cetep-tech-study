@@ -11,7 +11,7 @@ const SUBJECTS = ['', 'Algoritmos', 'Redes', 'Hardware', 'S.O.', 'Banco de Dados
 
 export default function TasksPage() {
   const { user } = useAuth();
-  const { awardPoints } = useApp();
+  const { completeTaskWithReward, toggleSubtaskWithReward } = useApp();
 
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -36,13 +36,15 @@ export default function TasksPage() {
   useEffect(() => { load(); }, [load]);
 
   const handleComplete = (taskId) => {
-    DataService.completeTask(user.id, taskId);
-    const result = awardPoints(10, 'task');
-    toast.success('Tarefa concluída! +10 pts 🎉');
-    if (result.newAchievements?.length > 0) {
-      result.newAchievements.forEach(a => {
+    // O XP é concedido pelo adapter apenas na 1ª conclusão da tarefa.
+    const result = completeTaskWithReward(taskId);
+    if (result.awarded) {
+      toast.success(`Tarefa concluída! +${result.points} pts 🎉`);
+      result.newAchievements?.forEach(a => {
         setTimeout(() => toast.success(`🏆 Conquista desbloqueada: ${a.title}!`, { duration: 5000 }), 600);
       });
+    } else {
+      toast('Tarefa já concluída anteriormente — sem pontos extras.', { icon: 'ℹ️' });
     }
     load();
   };
@@ -61,11 +63,9 @@ export default function TasksPage() {
   };
 
   const handleToggleSubtask = (taskId, subtaskId) => {
-    const updated = DataService.toggleSubtask(user.id, taskId, subtaskId);
-    const subtask = updated.subtasks.find(s => s.id === subtaskId);
-    if (subtask?.completed) {
-      awardPoints(5, 'subtask');
-      toast.success('+5 pts pela subtarefa! ⭐');
+    const result = toggleSubtaskWithReward(taskId, subtaskId);
+    if (result.awarded) {
+      toast.success(`+${result.points} pts pela subtarefa! ⭐`);
     }
     load();
   };

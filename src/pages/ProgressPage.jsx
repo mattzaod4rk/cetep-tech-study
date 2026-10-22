@@ -3,7 +3,7 @@ import { Clock, CheckSquare, Timer, Flame, Trophy, Star } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { useApp } from '../contexts/AppContext.jsx';
 import * as DataService from '../services/DataService.js';
-import { formatMinutes, SHORT_WEEKDAYS } from '../utils/dates.js';
+import { formatMinutes, SHORT_WEEKDAYS, parseLocalDate } from '../utils/dates.js';
 
 export default function ProgressPage() {
   const { user } = useAuth();
@@ -114,7 +114,7 @@ export default function ProgressPage() {
                     const pct = (min / maxMin) * 100;
                     const isToday = i === 6;
                     const day = stats.days[i];
-                    const label = SHORT_WEEKDAYS[new Date(day).getDay()];
+                    const label = SHORT_WEEKDAYS[parseLocalDate(day).getDay()];
                     return (
                       <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, height: '100%' }}>
                         <div style={{ flex: 1, display: 'flex', alignItems: 'flex-end', width: '100%' }}>

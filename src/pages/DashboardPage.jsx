@@ -7,14 +7,14 @@ import {
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { useApp } from '../contexts/AppContext.jsx';
 import * as DataService from '../services/DataService.js';
-import { formatDateBR, relativeDays, isWithinDays, isOverdue, formatMinutes } from '../utils/dates.js';
+import { formatDateBR, relativeDays, isWithinDays, isOverdue, formatMinutes, todayISO, parseLocalDate, SHORT_WEEKDAYS } from '../utils/dates.js';
 import TaskModal from '../components/tasks/TaskModal.jsx';
 import SummarizeModal from '../components/SummarizeModal.jsx';
 import toast from 'react-hot-toast';
 
 export default function DashboardPage() {
   const { user } = useAuth();
-  const { gamification, awardPoints } = useApp();
+  const { gamification, completeTaskWithReward } = useApp();
   const navigate = useNavigate();
 
   const [tasks, setTasks] = useState([]);
@@ -42,7 +42,7 @@ export default function DashboardPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  const today = new Date().toISOString().split('T')[0];
+  const today = todayISO();
 
   const todayTasks = tasks.filter(t =>
     t.status === 'pending' && t.deadline && t.deadline === today
@@ -63,13 +63,15 @@ export default function DashboardPage() {
   const firstName = user.name.split(' ')[0];
 
   const handleCompleteTask = async (taskId) => {
-    DataService.completeTask(user.id, taskId);
-    const result = awardPoints(10, 'task');
-    toast.success('Tarefa concluída! +10 pts 🎉');
-    if (result.newAchievements?.length > 0) {
-      result.newAchievements.forEach(a => {
+    // O XP é concedido pelo adapter apenas na 1ª conclusão da tarefa.
+    const result = completeTaskWithReward(taskId);
+    if (result.awarded) {
+      toast.success(`Tarefa concluída! +${result.points} pts 🎉`);
+      result.newAchievements?.forEach(a => {
         setTimeout(() => toast.success(`🏆 Conquista: ${a.title} (+${a.points} pts)`, { duration: 5000 }), 800);
       });
+    } else {
+      toast('Tarefa já concluída anteriormente — sem pontos extras.', { icon: 'ℹ️' });
     }
     load();
   };
@@ -394,8 +396,10 @@ export default function DashboardPage() {
                 })}
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
-                {['D', 'S', 'T', 'Q', 'Q', 'S', 'S'].map((d, i) => (
-                  <div key={i} style={{ flex: 1, textAlign: 'center', fontSize: '0.68rem', color: i === 6 ? 'var(--color-primary)' : 'var(--color-text-muted)', fontWeight: i === 6 ? 700 : 400 }}>{d}</div>
+                {stats.days.map((day, i) => (
+                  <div key={day} style={{ flex: 1, textAlign: 'center', fontSize: '0.68rem', color: i === 6 ? 'var(--color-primary)' : 'var(--color-text-muted)', fontWeight: i === 6 ? 700 : 400 }}>
+                    {SHORT_WEEKDAYS[parseLocalDate(day).getDay()].charAt(0)}
+                  </div>
                 ))}
               </div>
             </div>

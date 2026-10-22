@@ -8,6 +8,10 @@
  */
 
 import { hashPassword, verifyPassword } from './crypto.js';
+import { toLocalISODate } from '../utils/dates.js';
+
+const TASK_XP = 10;
+const SUBTASK_XP = 5;
 
 const KEYS = {
   USERS: 'cetep_users',
@@ -179,11 +183,47 @@ export function completeTask(userId, taskId) {
   return tasks[idx];
 }
 
+/**
+ * Conclui a tarefa e concede o XP em UMA operação síncrona sobre o localStorage.
+ * O XP só é concedido na primeira conclusão da tarefa (flag `xpAwarded`), então
+ * cliques repetidos, reabrir/concluir de novo ou re-renderizações não geram XP extra.
+ * Tarefas já concluídas antes desta correção (sem a flag) são tratadas como já pagas.
+ *
+ * @returns {{ task: object, awarded: boolean, points: number, newAchievements: object[] }}
+ */
+export function completeTaskWithReward(userId, taskId) {
+  const tasks = getUserTasks(userId);
+  const idx = tasks.findIndex(t => t.id === taskId);
+  if (idx === -1) throw new Error('Tarefa não encontrada.');
+
+  const current = tasks[idx];
+  const alreadyRewarded = current.xpAwarded === true || current.status === 'completed';
+
+  tasks[idx] = {
+    ...current,
+    status: 'completed',
+    completedAt: current.status === 'completed' && current.completedAt
+      ? current.completedAt
+      : new Date().toISOString(),
+    xpAwarded: true,
+  };
+  saveUserTasks(userId, tasks);
+
+  if (alreadyRewarded) {
+    return { task: tasks[idx], awarded: false, points: 0, newAchievements: [] };
+  }
+  const result = addPoints(userId, TASK_XP, 'task');
+  return { task: tasks[idx], awarded: true, points: TASK_XP, newAchievements: result.newAchievements };
+}
+
 export function reopenTask(userId, taskId) {
   const tasks = getUserTasks(userId);
   const idx = tasks.findIndex(t => t.id === taskId);
   if (idx === -1) throw new Error('Tarefa não encontrada.');
-  tasks[idx] = { ...tasks[idx], status: 'pending', completedAt: null };
+  // Reabrir não devolve nem recobra XP: uma tarefa que já esteve concluída
+  // permanece marcada como "já paga" para impedir o ciclo concluir/reabrir.
+  const wasRewarded = tasks[idx].xpAwarded === true || tasks[idx].status === 'completed';
+  tasks[idx] = { ...tasks[idx], status: 'pending', completedAt: null, xpAwarded: wasRewarded };
   saveUserTasks(userId, tasks);
   return tasks[idx];
 }
@@ -207,6 +247,36 @@ export function toggleSubtask(userId, taskId, subtaskId) {
   );
   saveUserTasks(userId, tasks);
   return tasks[idx];
+}
+
+/**
+ * Alterna a subtarefa e concede XP apenas na primeira vez que ela é concluída
+ * (flag `xpAwarded` por subtarefa). Desmarcar e marcar de novo não gera XP extra.
+ *
+ * @returns {{ task: object, completed: boolean, awarded: boolean, points: number, newAchievements: object[] }}
+ */
+export function toggleSubtaskWithReward(userId, taskId, subtaskId) {
+  const tasks = getUserTasks(userId);
+  const idx = tasks.findIndex(t => t.id === taskId);
+  if (idx === -1) throw new Error('Tarefa não encontrada.');
+
+  let completed = false;
+  let awarded = false;
+  tasks[idx].subtasks = (tasks[idx].subtasks || []).map(s => {
+    if (s.id !== subtaskId) return s;
+    completed = !s.completed;
+    // Subtarefa que já estava concluída (inclusive dados antigos sem flag) já foi paga.
+    const alreadyRewarded = s.xpAwarded === true || s.completed === true;
+    if (completed && !alreadyRewarded) awarded = true;
+    return { ...s, completed, xpAwarded: alreadyRewarded || awarded };
+  });
+  saveUserTasks(userId, tasks);
+
+  if (!awarded) {
+    return { task: tasks[idx], completed, awarded: false, points: 0, newAchievements: [] };
+  }
+  const result = addPoints(userId, SUBTASK_XP, 'subtask');
+  return { task: tasks[idx], completed, awarded: true, points: SUBTASK_XP, newAchievements: result.newAchievements };
 }
 
 // ─── Agenda ───────────────────────────────────────────────────────────────────
@@ -405,16 +475,16 @@ export function getWeeklyStats(userId) {
   const sessions = getUserFocusSessions(userId);
   const tasks = getUserTasks(userId);
 
-  // Last 7 days
+  // Last 7 days (local calendar days, YYYY-MM-DD). Index 6 is always today.
   const days = Array.from({ length: 7 }, (_, i) => {
     const d = new Date();
     d.setDate(d.getDate() - (6 - i));
-    return d.toDateString();
+    return toLocalISODate(d);
   });
 
   const dailyMinutes = days.map(day => {
     return sessions
-      .filter(s => new Date(s.completedAt).toDateString() === day)
+      .filter(s => toLocalISODate(new Date(s.completedAt)) === day)
       .reduce((acc, s) => acc + s.durationMinutes, 0);
   });
 

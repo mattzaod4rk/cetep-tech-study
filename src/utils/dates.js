@@ -3,10 +3,30 @@
  */
 
 /**
- * Returns today's date as YYYY-MM-DD string.
+ * Formats a Date as YYYY-MM-DD using the LOCAL calendar day.
+ * (toISOString() would use UTC, which is "tomorrow" in Brazil after 21h.)
+ */
+export function toLocalISODate(date = new Date()) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+/**
+ * Parses a YYYY-MM-DD string into a Date at local midnight.
+ * Avoids new Date('YYYY-MM-DD'), which is parsed as UTC.
+ */
+export function parseLocalDate(dateStr) {
+  const [year, month, day] = dateStr.split('-').map(Number);
+  return new Date(year, month - 1, day);
+}
+
+/**
+ * Returns today's date (local timezone) as YYYY-MM-DD string.
  */
 export function todayISO() {
-  return new Date().toISOString().split('T')[0];
+  return toLocalISODate(new Date());
 }
 
 /**

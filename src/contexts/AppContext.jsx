@@ -90,6 +90,19 @@ export function AppProvider({ children }) {
     setGamification(DataService.getGamification(user.id));
   }, [user]);
 
+  // Conclusão de tarefa/subtarefa com XP concedido uma única vez (ver LocalStorageAdapter).
+  const completeTaskWithReward = useCallback((taskId) => {
+    const result = DataService.completeTaskWithReward(user.id, taskId);
+    if (result.awarded) refreshGamification();
+    return result;
+  }, [user, refreshGamification]);
+
+  const toggleSubtaskWithReward = useCallback((taskId, subtaskId) => {
+    const result = DataService.toggleSubtaskWithReward(user.id, taskId, subtaskId);
+    if (result.awarded) refreshGamification();
+    return result;
+  }, [user, refreshGamification]);
+
   return (
     <AppContext.Provider value={{
       settings,
@@ -103,6 +116,8 @@ export function AppProvider({ children }) {
       gamification,
       awardPoints,
       refreshGamification,
+      completeTaskWithReward,
+      toggleSubtaskWithReward,
     }}>
       {children}
     </AppContext.Provider>

@@ -2,6 +2,7 @@ import React, { useState, useCallback } from 'react';
 import { X } from 'lucide-react';
 import * as DataService from '../../services/DataService.js';
 import { useAuth } from '../../contexts/AuthContext.jsx';
+import { todayISO } from '../../utils/dates.js';
 import toast from 'react-hot-toast';
 
 const SUBJECTS = ['Algoritmos', 'Redes', 'Hardware', 'S.O.', 'Banco de Dados', 'Web', 'Programação', 'Inglês Técnico', 'Outro'];
@@ -101,7 +102,7 @@ export default function TaskModal({ onClose, onSave, task = null }) {
 
             <div className="form-group">
               <label className="form-label" htmlFor="task-deadline">Prazo</label>
-              <input id="task-deadline" type="date" className="form-input" value={form.deadline} onChange={e => set('deadline', e.target.value)} min={new Date().toISOString().split('T')[0]} />
+              <input id="task-deadline" type="date" className="form-input" value={form.deadline} onChange={e => set('deadline', e.target.value)} min={todayISO()} />
             </div>
 
             {/* Subtasks */}
