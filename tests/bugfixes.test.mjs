@@ -568,3 +568,212 @@ test('Fluxo de Gerenciamento de Estudantes na Turma (Busca Segura, Matrícula, A
 });
 
 
+
+// ── PASSO 7: Catálogo de 8 Disciplinas (80+ Questões), Mural do Aluno e Perfil Individual ──
+const { STUDY_SUBJECT_TABS, resolveStudySubjectTab } = await import('../src/data/cetepStudyCatalog.js');
+const { getStudyHubTabForSubject, doesSubjectMatchStudyTab } = await import('../src/utils/subjects.js');
+
+test('Catálogo de Estudos: 8 abas disciplinares independentes com no mínimo 10 questões estruturadas por matéria (80+ total) e retrocompatibilidade de Humanas', () => {
+  const expectedIds = [
+    'matematica',
+    'informatica',
+    'fisica',
+    'historia',
+    'geografia',
+    'filosofia_sociologia',
+    'linguagens',
+    'natureza',
+  ];
+  assert.deepEqual(STUDY_SUBJECT_TABS.map(t => t.id), expectedIds);
+
+  // Retrocompatibilidade: alias 'humanas' resolve para 'filosofia_sociologia'
+  assert.equal(resolveStudySubjectTab('humanas').id, 'filosofia_sociologia');
+  assert.equal(getStudyHubTabForSubject('História'), 'historia');
+  assert.equal(getStudyHubTabForSubject('Geografia'), 'geografia');
+  assert.equal(getStudyHubTabForSubject('Filosofia e Sociologia'), 'filosofia_sociologia');
+  assert.equal(getStudyHubTabForSubject('Humanas'), 'filosofia_sociologia');
+
+  let totalExercises = 0;
+  const seenIds = new Set();
+
+  for (const tab of STUDY_SUBJECT_TABS) {
+    assert.equal(
+      tab.exercises.length >= 10,
+      true,
+      `A aba ${tab.label} (${tab.id}) deve possuir pelo menos 10 exercícios, mas possui ${tab.exercises.length}`
+    );
+    totalExercises += tab.exercises.length;
+
+    for (const ex of tab.exercises) {
+      assert.equal(typeof ex.id, 'string');
+      assert.equal(seenIds.has(ex.id), false, `ID de exercício duplicado: ${ex.id}`);
+      seenIds.add(ex.id);
+      assert.equal(typeof ex.subject, 'string');
+      assert.equal(ex.subject.length > 0, true);
+      assert.equal(typeof ex.topic, 'string');
+      assert.equal(ex.topic.length > 0, true);
+      assert.equal(['Básico', 'Intermediário', 'Avançado'].includes(ex.difficulty), true);
+      assert.equal(typeof ex.question, 'string');
+      assert.equal(Array.isArray(ex.options) && ex.options.length === 4, true);
+      assert.equal(Number.isInteger(ex.correctIndex) && ex.correctIndex >= 0 && ex.correctIndex <= 3, true);
+      assert.equal(Array.isArray(ex.hints) && ex.hints.length >= 1, true);
+      assert.equal(typeof ex.explanation, 'string');
+      assert.equal(ex.explanation.length > 0, true);
+    }
+  }
+
+  assert.equal(totalExercises >= 80, true);
+});
+
+test('Visibilidade Docente -> Estudante e Perfil Acadêmico Individual (Atividades Individuais, Notas, Feedbacks e Observações Internas)', async () => {
+  const adminUser = { uid: 'uid-admin-1', name: 'Coordenação Admin', email: 'admin@cetep.ba.gov.br', role: 'admin' };
+  const profA = { uid: 'uid-prof-a', name: 'Prof. Redes e História', email: 'profa@cetep.ba.gov.br', role: 'professor' };
+  const profB = { uid: 'uid-prof-b', name: 'Prof. Outra Turma', email: 'profb@cetep.ba.gov.br', role: 'professor' };
+
+  const studentA = await DS.register({ name: 'Lucas Oliveira', email: 'lucas@enova.educacao.ba.gov.br', password: '123' });
+  const studentB = await DS.register({ name: 'Mariana Costa', email: 'mariana@enova.educacao.ba.gov.br', password: '123' });
+
+  // Lucas realiza 1 tarefa e 1 sessão de foco
+  const t1 = DS.createTask(studentA.id, { title: 'Resumo sobre o 2 de Julho', subject: 'História', priority: 'high' });
+  DS.completeTaskWithReward(studentA.id, t1.id);
+  DS.createTask(studentA.id, { title: 'Mapa de Biomas da Bahia', subject: 'Geografia', priority: 'medium' });
+  DS.saveFocusSessionWithReward(studentA.id, {
+    sessionId: 'sess-lucas-1',
+    elapsedSeconds: 1500,
+    plannedMinutes: 25,
+    completed: true,
+    subject: 'História',
+  });
+
+  const classA = await TS.createClass(adminUser, {
+    name: '2º INFO Matutino',
+    course: 'Técnico em Informática',
+    shift: 'Manhã',
+    subjects: ['História', 'Geografia', 'Redes de Computadores'],
+    teacherIds: [profA.uid],
+    studentIds: [studentA.id],
+  });
+
+  const classB = await TS.createClass(adminUser, {
+    name: '3º INFO Vespertino',
+    course: 'Técnico em Informática',
+    shift: 'Tarde',
+    subjects: ['Física'],
+    teacherIds: [profB.uid],
+    studentIds: [studentB.id],
+  });
+
+  // 1) Professor A publica conteúdo, atividade e comunicado na Turma A
+  await TS.createClassContent(profA, classA, {
+    title: 'Apostila: Independência da Bahia no Recôncavo',
+    subject: 'História',
+    description: 'Leitura guiada sobre Cachoeira, Santo Amaro e o 2 de Julho.',
+    resourceUrl: 'https://exemplo.cetep.ba.gov.br/2dejulho',
+  });
+  await TS.createClassActivity(profA, classA, {
+    title: 'Mapa Temático da Caatinga e Mata Atlântica',
+    subject: 'Geografia',
+    type: 'Trabalho',
+    dueDate: '2026-11-25',
+    points: 10,
+    description: 'Identificar os biomas baianos.',
+  });
+  await TS.createClassAnnouncement(profA, classA, {
+    title: 'Apresentação da Mostra Científica',
+    message: 'Tragam os cartazes na próxima quarta-feira.',
+    priority: 'important',
+  });
+
+  // 2) Estudante A (matriculado na Turma A) visualiza automaticamente o conteúdo, a atividade e o comunicado
+  const feedA = await TS.getStudentEnrolledClassesFeed({ uid: studentA.id, role: 'aluno' });
+  assert.equal(feedA.enrolledClasses.length, 1);
+  assert.equal(feedA.contents.length, 1);
+  assert.equal(feedA.contents[0].title, 'Apostila: Independência da Bahia no Recôncavo');
+  assert.equal(doesSubjectMatchStudyTab(feedA.contents[0].subject, 'historia'), true);
+  assert.equal(feedA.activities.length, 1);
+  assert.equal(feedA.announcements.length, 1);
+  assert.equal(feedA.announcements[0].title, 'Apresentação da Mostra Científica');
+
+  // 3) Estudante B (de outra turma) NÃO visualiza publicações da Turma A
+  const feedB = await TS.getStudentEnrolledClassesFeed({ uid: studentB.id, role: 'aluno' });
+  assert.equal(feedB.contents.length, 0);
+  assert.equal(feedB.announcements.length, 0);
+
+  // 4) Professor A acessa o Perfil Acadêmico Individual de Lucas (studentA) e gerencia sua trajetória
+  const profileView = await TS.getStudentAcademicProfile(profA, studentA.id, classA.id);
+  assert.equal(profileView.student.name, 'Lucas Oliveira');
+  assert.equal(profileView.enrolledClasses.length, 1);
+  assert.equal(profileView.tasksCompleted.length, 1);
+  assert.equal(profileView.tasksPending.length, 1);
+  assert.equal(profileView.focusSessions.length, 1);
+  assert.equal(profileView.focusSessions.reduce((a, x) => a + (x.durationMinutes || 0), 0) >= 1, true);
+
+  // Atribui atividade individual, registra nota, envia feedback e grava observação interna
+  const indAct = await TS.assignIndividualActivity(profA, {
+    studentUid: studentA.id,
+    classId: classA.id,
+    title: 'Exercício Individual de Escala Cartográfica',
+    subject: 'Geografia',
+    dueDate: '2026-11-28',
+    points: 10,
+    description: 'Resolver os 3 primeiros exercícios da aba Geografia.',
+  });
+  const gradeRec = await TS.recordStudentGrade(profA, {
+    studentUid: studentA.id,
+    classId: classA.id,
+    title: 'Avaliação I Unidade — História da Bahia',
+    subject: 'História',
+    unit: 'I Unidade',
+    score: 9.2,
+    maxScore: 10,
+    notes: 'Excelente domínio sobre a Conjuração Baiana.',
+  });
+  const feedbackRec = await TS.addPedagogicalFeedback(profA, {
+    studentUid: studentA.id,
+    classId: classA.id,
+    title: 'Parabéns pela constância no Modo Foco!',
+    subject: 'História',
+    category: 'Reconhecimento & Evolução',
+    comment: 'Sua rotina de estudos diários está exemplar.',
+  });
+  const internalNote = await TS.addStudentInternalNote(profA, {
+    studentUid: studentA.id,
+    classId: classA.id,
+    category: 'Atendimento AEE',
+    observation: 'Estudante responde muito bem a materiais visuais divididos em passos curtos.',
+  });
+
+  assert.equal(indAct.title, 'Exercício Individual de Escala Cartográfica');
+  assert.equal(gradeRec.score, 9.2);
+  assert.equal(feedbackRec.category, 'Reconhecimento & Evolução');
+  assert.equal(internalNote.category, 'Atendimento AEE');
+
+  // 5) Estudante A vê sua atividade individual, nota e feedback, mas NUNCA recebe internalNotes no feed
+  const updatedFeedA = await TS.getStudentEnrolledClassesFeed({ uid: studentA.id, role: 'aluno' });
+  assert.equal(updatedFeedA.individualActivities.length, 1);
+  assert.equal(updatedFeedA.academicRecords.length, 1);
+  assert.equal(updatedFeedA.pedagogicalFeedbacks.length, 1);
+  assert.equal('internalNotes' in updatedFeedA, false);
+
+  // Estudante A conclui sua atividade individual
+  const toggled = await TS.toggleStudentIndividualActivityStatus(
+    { uid: studentA.id, role: 'aluno' },
+    indAct.id
+  );
+  assert.equal(toggled.status, 'completed');
+
+  // 6) Professor B (não vinculado à turma de Lucas) é BLOQUEADO ao tentar acessar o perfil de Lucas
+  await assert.rejects(
+    () => TS.getStudentAcademicProfile(profB, studentA.id, classB.id),
+    /Acesso negado/
+  );
+  await assert.rejects(
+    () => TS.recordStudentGrade(profB, { studentUid: studentA.id, classId: classB.id, title: 'Nota Inválida', subject: 'Física', score: 5 }),
+    /Acesso negado/
+  );
+
+  // 7) Administrador acessa o perfil de qualquer estudante da plataforma
+  const adminProfileView = await TS.getStudentAcademicProfile(adminUser, studentA.id);
+  assert.equal(adminProfileView.internalNotes.length, 1);
+  assert.equal(adminProfileView.academicRecords.length, 1);
+});

@@ -3,11 +3,13 @@ import { useNavigate } from 'react-router-dom';
 import {
   Plus, Timer, Calendar, FileText, CheckSquare,
   BookOpen, Clock, Target, Zap, AlertTriangle,
-  ChevronRight, Flame, Shield, CheckCircle2, GraduationCap
+  ChevronRight, Flame, Shield, CheckCircle2, GraduationCap,
+  Megaphone, ExternalLink, Award, MessageSquare
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { useApp } from '../contexts/AppContext.jsx';
 import * as DataService from '../services/DataService.js';
+import * as TeacherService from '../services/TeacherService.js';
 import {
   formatDateBR, relativeDays, isWithinDays, isOverdue,
   formatMinutes, todayISO, parseLocalDate, SHORT_WEEKDAYS, WEEKDAYS
@@ -26,11 +28,20 @@ export default function DashboardPage() {
   const [events, setEvents] = useState([]);
   const [stats, setStats] = useState(null);
   const [weeklyPlan, setWeeklyPlan] = useState(null);
+  const [classFeed, setClassFeed] = useState({
+    enrolledClasses: [],
+    contents: [],
+    activities: [],
+    announcements: [],
+    individualActivities: [],
+    academicRecords: [],
+    pedagogicalFeedbacks: [],
+  });
   const [loading, setLoading] = useState(true);
   const [showTaskModal, setShowTaskModal] = useState(false);
   const [showSummarize, setShowSummarize] = useState(false);
 
-  const load = useCallback(() => {
+  const load = useCallback(async () => {
     setLoading(true);
     try {
       const t = DataService.getTasks(user.id);
@@ -42,14 +53,35 @@ export default function DashboardPage() {
       setStats(s);
       setWeeklyPlan(p);
       refreshGamification();
+
+      const feed = await TeacherService.getStudentEnrolledClassesFeed(user).catch(() => ({
+        enrolledClasses: [],
+        contents: [],
+        activities: [],
+        announcements: [],
+        individualActivities: [],
+        academicRecords: [],
+        pedagogicalFeedbacks: [],
+      }));
+      setClassFeed(feed);
     } catch {
       toast.error('Erro ao carregar dados.');
     } finally {
       setLoading(false);
     }
-  }, [user.id, refreshGamification]);
+  }, [user, refreshGamification]);
 
   useEffect(() => { load(); }, [load, syncRevision]);
+
+  const handleToggleIndividualActivity = async (activityId) => {
+    try {
+      await TeacherService.toggleStudentIndividualActivityStatus(user, activityId);
+      toast.success('Status da atividade individual atualizado.');
+      await load();
+    } catch (err) {
+      toast.error(err.message || 'Erro ao atualizar atividade.');
+    }
+  };
 
   const today = todayISO();
   const todayDayIndex = new Date().getDay();
@@ -576,6 +608,302 @@ export default function DashboardPage() {
             </div>
           )}
         </div>
+      </div>
+
+      {/* ─── Mural da Turma & Acompanhamento Docente (Conteúdos, Comunicados, Atividades e Notas) ─── */}
+      <div className="card" style={{ marginTop: 22 }} id="student-class-feed-section">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
+          <div>
+            <h3 style={{ display: 'flex', alignItems: 'center', gap: 8, margin: 0 }}>
+              <GraduationCap size={18} style={{ color: 'var(--color-primary)' }} />
+              Mural da Turma & Publicações dos Professores
+            </h3>
+            <p style={{ margin: '4px 0 0', fontSize: '0.84rem', color: 'var(--color-text-secondary)' }}>
+              {classFeed.enrolledClasses.length > 0
+                ? `Turma(s) vinculada(s): ${classFeed.enrolledClasses.map(c => `${c.name} (${c.shift})`).join(' · ')}`
+                : 'Assim que um professor vincular sua conta a uma turma, os comunicados, conteúdos e atividades da turma aparecerão aqui automaticamente.'}
+            </p>
+          </div>
+          {classFeed.contents.length > 0 && (
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={() => navigate('/math')}
+            >
+              <BookOpen size={14} /> Ver nos Cadernos de Estudo
+            </button>
+          )}
+        </div>
+
+        {classFeed.enrolledClasses.length === 0 &&
+         classFeed.individualActivities.length === 0 &&
+         classFeed.academicRecords.length === 0 &&
+         classFeed.pedagogicalFeedbacks.length === 0 ? (
+          <div style={{
+            padding: '20px 16px',
+            borderRadius: 10,
+            background: 'var(--color-bg-subtle)',
+            border: '1px dashed var(--color-border)',
+            fontSize: '0.85rem',
+            color: 'var(--color-text-muted)',
+            textAlign: 'center',
+          }}>
+            Nenhuma turma ou publicação docente vinculada à sua conta neste momento.
+          </div>
+        ) : (
+          <div className="grid-2" style={{ gap: 18, alignItems: 'start' }}>
+            {/* Coluna 1: Comunicados e Conteúdos Publicados na Turma */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <div>
+                <h4 style={{ fontSize: '0.88rem', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Megaphone size={15} style={{ color: 'var(--color-primary)' }} />
+                  Comunicados da Turma ({classFeed.announcements.length})
+                </h4>
+                {classFeed.announcements.length === 0 ? (
+                  <div style={{ padding: '12px', borderRadius: 8, background: 'var(--color-bg-subtle)', fontSize: '0.82rem', color: 'var(--color-text-muted)' }}>
+                    Nenhum comunicado publicado para sua turma até o momento.
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {classFeed.announcements.map(ann => (
+                      <div
+                        key={ann.id}
+                        style={{
+                          padding: '12px 14px',
+                          borderRadius: 8,
+                          background: 'var(--color-bg-input)',
+                          border: '1px solid var(--color-border)',
+                          borderLeft: `4px solid ${
+                            ann.priority === 'urgent'
+                              ? 'var(--color-danger)'
+                              : ann.priority === 'important'
+                              ? 'var(--color-warning)'
+                              : 'var(--color-primary)'
+                          }`,
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                          <strong style={{ fontSize: '0.88rem' }}>{ann.title}</strong>
+                          <span className={`badge ${ann.priority === 'urgent' ? 'badge-danger' : ann.priority === 'important' ? 'badge-warning' : 'badge-primary'}`}>
+                            {ann.priority === 'urgent' ? 'Urgente' : ann.priority === 'important' ? 'Importante' : 'Aviso'}
+                          </span>
+                        </div>
+                        <p style={{ margin: '0 0 6px', fontSize: '0.83rem', color: 'var(--color-text-secondary)', whiteSpace: 'pre-wrap' }}>
+                          {ann.message}
+                        </p>
+                        <div style={{ fontSize: '0.74rem', color: 'var(--color-text-muted)' }}>
+                          {ann.className && <span>{ann.className} · </span>}
+                          Prof. {ann.authorName} · {ann.createdAt ? new Date(ann.createdAt).toLocaleDateString('pt-BR') : ''}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <h4 style={{ fontSize: '0.88rem', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <BookOpen size={15} style={{ color: 'var(--color-primary)' }} />
+                  Conteúdos e Materiais dos Professores ({classFeed.contents.length})
+                </h4>
+                {classFeed.contents.length === 0 ? (
+                  <div style={{ padding: '12px', borderRadius: 8, background: 'var(--color-bg-subtle)', fontSize: '0.82rem', color: 'var(--color-text-muted)' }}>
+                    Nenhum conteúdo publicado pelos professores da sua turma ainda.
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {classFeed.contents.map(cnt => (
+                      <div
+                        key={cnt.id}
+                        style={{
+                          padding: '12px 14px',
+                          borderRadius: 8,
+                          background: 'var(--color-bg-input)',
+                          border: '1px solid var(--color-border)',
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, marginBottom: 4 }}>
+                          <strong style={{ fontSize: '0.88rem' }}>{cnt.title}</strong>
+                          <span className="chip">{cnt.subject}</span>
+                        </div>
+                        {cnt.description && (
+                          <p style={{ margin: '0 0 8px', fontSize: '0.82rem', color: 'var(--color-text-secondary)' }}>
+                            {cnt.description}
+                          </p>
+                        )}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+                          <span style={{ fontSize: '0.74rem', color: 'var(--color-text-muted)' }}>
+                            {cnt.className && <span>{cnt.className} · </span>}
+                            Prof. {cnt.authorName} · {cnt.createdAt ? new Date(cnt.createdAt).toLocaleDateString('pt-BR') : ''}
+                          </span>
+                          <div style={{ display: 'flex', gap: 8 }}>
+                            {cnt.resourceUrl && (
+                              <a
+                                href={cnt.resourceUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="btn btn-primary btn-sm"
+                                style={{ fontSize: '0.76rem', padding: '4px 10px' }}
+                              >
+                                <ExternalLink size={12} /> Abrir material / aula
+                              </a>
+                            )}
+                            <button
+                              type="button"
+                              className="btn btn-ghost btn-sm"
+                              style={{ fontSize: '0.76rem', padding: '4px 8px' }}
+                              onClick={() => navigate(`/math?tab=${getStudyHubTabForSubject(cnt.subject)}`)}
+                            >
+                              Ver Caderno <ChevronRight size={12} />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Coluna 2: Atividades Publicadas (Turma e Individuais) + Notas e Feedbacks */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <div>
+                <h4 style={{ fontSize: '0.88rem', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <FileText size={15} style={{ color: 'var(--color-primary)' }} />
+                  Atividades da Turma e Individuais ({classFeed.activities.length + classFeed.individualActivities.length})
+                </h4>
+                {classFeed.activities.length === 0 && classFeed.individualActivities.length === 0 ? (
+                  <div style={{ padding: '12px', borderRadius: 8, background: 'var(--color-bg-subtle)', fontSize: '0.82rem', color: 'var(--color-text-muted)' }}>
+                    Nenhuma atividade docente publicada para você neste momento.
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {classFeed.individualActivities.map(ind => (
+                      <div
+                        key={ind.id}
+                        style={{
+                          padding: '10px 12px',
+                          borderRadius: 8,
+                          background: 'var(--color-bg-input)',
+                          border: '1px solid var(--color-border)',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          gap: 10,
+                        }}
+                      >
+                        <div>
+                          <div style={{ fontWeight: 600, fontSize: '0.86rem', textDecoration: ind.status === 'completed' ? 'line-through' : 'none' }}>
+                            [Individual] {ind.title}
+                          </div>
+                          <div style={{ fontSize: '0.76rem', color: 'var(--color-text-secondary)' }}>
+                            {ind.subject} · Valor: {ind.points} pts {ind.dueDate ? `· Prazo: ${formatDateBR(ind.dueDate)}` : ''}
+                          </div>
+                          {ind.description && (
+                            <div style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)', marginTop: 2 }}>
+                              {ind.description}
+                            </div>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          className={`btn btn-sm ${ind.status === 'completed' ? 'btn-secondary' : 'btn-primary'}`}
+                          onClick={() => handleToggleIndividualActivity(ind.id)}
+                        >
+                          {ind.status === 'completed' ? 'Concluída ✓' : 'Marcar concluída'}
+                        </button>
+                      </div>
+                    ))}
+                    {classFeed.activities.map(act => (
+                      <div
+                        key={act.id}
+                        style={{
+                          padding: '10px 12px',
+                          borderRadius: 8,
+                          background: 'var(--color-bg-input)',
+                          border: '1px solid var(--color-border)',
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                          <strong style={{ fontSize: '0.86rem' }}>{act.title}</strong>
+                          <span className="badge badge-primary">{act.type} · {act.points} pts</span>
+                        </div>
+                        {act.description && (
+                          <p style={{ margin: '4px 0', fontSize: '0.8rem', color: 'var(--color-text-secondary)' }}>
+                            {act.description}
+                          </p>
+                        )}
+                        <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: 4 }}>
+                          {act.subject} {act.dueDate ? `· Entrega: ${formatDateBR(act.dueDate)}` : ''} · Prof. {act.authorName}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {(classFeed.academicRecords.length > 0 || classFeed.pedagogicalFeedbacks.length > 0) && (
+                <div>
+                  <h4 style={{ fontSize: '0.88rem', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <Award size={15} style={{ color: 'var(--color-primary)' }} />
+                    Resultados de Avaliações & Feedbacks dos Professores
+                  </h4>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {classFeed.academicRecords.map(rec => (
+                      <div
+                        key={rec.id}
+                        style={{
+                          padding: '10px 12px',
+                          borderRadius: 8,
+                          background: 'var(--color-bg-input)',
+                          border: '1px solid var(--color-border)',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          gap: 8,
+                        }}
+                      >
+                        <div>
+                          <div style={{ fontWeight: 600, fontSize: '0.85rem' }}>
+                            {rec.title} ({rec.unit})
+                          </div>
+                          <div style={{ fontSize: '0.76rem', color: 'var(--color-text-secondary)' }}>
+                            {rec.subject} · Prof. {rec.authorName}
+                          </div>
+                          {rec.notes && (
+                            <div style={{ fontSize: '0.76rem', color: 'var(--color-text-muted)', marginTop: 2 }}>
+                              {rec.notes}
+                            </div>
+                          )}
+                        </div>
+                        <span className="badge badge-success" style={{ fontSize: '0.84rem', fontWeight: 700 }}>
+                          Nota: {rec.score} / {rec.maxScore}
+                        </span>
+                      </div>
+                    ))}
+                    {classFeed.pedagogicalFeedbacks.map(fb => (
+                      <div
+                        key={fb.id}
+                        style={{
+                          padding: '10px 12px',
+                          borderRadius: 8,
+                          background: 'var(--color-bg-subtle)',
+                          border: '1px solid var(--color-border)',
+                          fontSize: '0.82rem',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, marginBottom: 4 }}>
+                          <MessageSquare size={13} /> Feedback em {fb.subject} (Prof. {fb.authorName})
+                        </div>
+                        <div style={{ color: 'var(--color-text-secondary)' }}>{fb.comment}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ─── Modals ──────────────────────────────── */}

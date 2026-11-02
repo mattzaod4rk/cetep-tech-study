@@ -116,6 +116,16 @@ service cloud.firestore {
         (request.auth.uid in get(/databases/$(database)/documents/classes/$(classId)).data.teacherIds);
     }
 
+    // Check if the authenticated teacher is assigned to classId AND studentId is enrolled in classId
+    function isTeacherOfStudentInClass(studentId, classId) {
+      return isTeacher() &&
+        classId is string &&
+        classId.size() >= 1 &&
+        exists(/databases/$(database)/documents/classes/$(classId)) &&
+        (request.auth.uid in get(/databases/$(database)/documents/classes/$(classId)).data.teacherIds) &&
+        (studentId in get(/databases/$(database)/documents/classes/$(classId)).data.studentIds);
+    }
+
     // Check if the authenticated user can manage a specific class (Admin or assigned Teacher)
     function canManageClass(classId) {
       return isAdmin() || isClassTeacher(classId);
@@ -561,6 +571,47 @@ service cloud.firestore {
         allow delete: if isOwner(userId) &&
           docId in ['gamification', 'settings', 'weeklyPlan', 'studyProgress'];
       }
+
+      // ---------------------------------------------------------------
+      // Subcollection: /users/{userId}/individualActivities/{activityId}
+      // ---------------------------------------------------------------
+      match /individualActivities/{activityId} {
+        allow read: if isOwner(userId) || isAdmin() ||
+          isTeacherOfStudentInClass(userId, resource.data.classId);
+        allow create: if (isAdmin() || isTeacherOfStudentInClass(userId, request.resource.data.classId)) &&
+          isValidString(request.resource.data.title, 1, 200) &&
+          isValidString(request.resource.data.subject, 1, 120);
+        allow update: if (isAdmin() || isTeacherOfStudentInClass(userId, resource.data.classId)) ||
+          (isOwner(userId) &&
+           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'completedAt', 'updatedAt']) &&
+           request.resource.data.status in ['pending', 'completed']);
+        allow delete: if isAdmin() || isTeacherOfStudentInClass(userId, resource.data.classId);
+      }
+
+      // ---------------------------------------------------------------
+      // Subcollection: /users/{userId}/academicRecords/{recordId}
+      // ---------------------------------------------------------------
+      match /academicRecords/{recordId} {
+        allow read: if isOwner(userId) || isAdmin() ||
+          isTeacherOfStudentInClass(userId, resource.data.classId);
+        allow create: if (isAdmin() || isTeacherOfStudentInClass(userId, request.resource.data.classId)) &&
+          isValidString(request.resource.data.title, 1, 200) &&
+          isValidString(request.resource.data.subject, 1, 120) &&
+          request.resource.data.score is number &&
+          request.resource.data.maxScore is number;
+        allow update, delete: if isAdmin() || isTeacherOfStudentInClass(userId, resource.data.classId);
+      }
+
+      // ---------------------------------------------------------------
+      // Subcollection: /users/{userId}/pedagogicalFeedbacks/{feedbackId}
+      // ---------------------------------------------------------------
+      match /pedagogicalFeedbacks/{feedbackId} {
+        allow read: if isOwner(userId) || isAdmin() ||
+          isTeacherOfStudentInClass(userId, resource.data.classId);
+        allow create: if (isAdmin() || isTeacherOfStudentInClass(userId, request.resource.data.classId)) &&
+          isValidString(request.resource.data.comment, 1, 3000);
+        allow update, delete: if isAdmin() || isTeacherOfStudentInClass(userId, resource.data.classId);
+      }
     }
 
     // ===============================================================
@@ -632,6 +683,19 @@ service cloud.firestore {
       // Strictly Admin-only; students and teachers cannot read or write invites directly from client
       allow read, delete: if isAdmin();
       allow create, update: if isAdmin() && isValidTeacherInvite(request.resource.data);
+    }
+
+    // ===============================================================
+    // Collection Rules: /studentInternalNotes/{studentId}/notes/{noteId}
+    // ===============================================================
+
+    match /studentInternalNotes/{studentId}/notes/{noteId} {
+      // Internal pedagogical observations by teachers/admins — NEVER visible to students
+      allow read: if isAdmin() ||
+        isTeacherOfStudentInClass(studentId, resource.data.classId);
+      allow create: if (isAdmin() || isTeacherOfStudentInClass(studentId, request.resource.data.classId)) &&
+        isValidString(request.resource.data.observation, 1, 3000);
+      allow update, delete: if isAdmin() || isTeacherOfStudentInClass(studentId, resource.data.classId);
     }
 
     // ===============================================================

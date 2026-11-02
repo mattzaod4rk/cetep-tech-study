@@ -1,10 +1,12 @@
 /**
- * TeacherDashboard — Painel Docente e Administrativo Real (Cloud Firestore + RBAC)
+ * TeacherDashboard — Painel Docente e Administrativo Real
  *
  * Perfis suportados:
- * - Professor (`role === 'professor'`): administra exclusivamente as turmas às quais foi autorizado (`uid in teacherIds`).
- * - Administrador (`role === 'admin'`): gerencia todas as turmas, aprova professores, controla perfis de usuários e emite convites individuais.
- * - Aluno (`role === 'aluno'`): bloqueado tanto na rota (`/teacher`) quanto nas regras de segurança do Cloud Firestore (`firestore.rules`).
+ * - Professor (`role === 'professor'`): administra exclusivamente as turmas às quais foi autorizado (`uid in teacherIds`),
+ *   com autonomia para matricular estudantes cadastrados e acompanhar o perfil individual de cada aluno da sua turma.
+ * - Administrador (`role === 'admin'`): gerencia todas as turmas, aprova professores, controla perfis de usuários,
+ *   emite convites individuais e acessa o perfil acadêmico de qualquer estudante da plataforma.
+ * - Aluno (`role === 'aluno'`): bloqueado tanto na rota (`/teacher`) quanto nas regras de segurança do servidor.
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -34,6 +36,12 @@ import {
   X,
   Check,
   History,
+  Award,
+  MessageSquare,
+  Lock,
+  Eye,
+  Flame,
+  ClipboardList,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext.jsx';
 import AccessibilityBar from '../../components/accessibility/AccessibilityBar.jsx';
@@ -43,6 +51,19 @@ import toast from 'react-hot-toast';
 
 const ACTIVITY_TYPES = ['Atividade', 'Prova', 'Trabalho', 'Seminário', 'Projeto'];
 const SHIFTS = ['Manhã', 'Tarde', 'Noite', 'Integral'];
+const EVALUATION_UNITS = ['I Unidade', 'II Unidade', 'III Unidade', 'Recuperação', 'Avaliação Diagnóstica'];
+const FEEDBACK_CATEGORIES = [
+  'Reconhecimento & Evolução',
+  'Orientação de Estudo',
+  'Acompanhamento de Foco',
+  'Adaptação Curricular / AEE',
+];
+const INTERNAL_NOTE_CATEGORIES = [
+  'Acompanhamento Pedagógico',
+  'Atendimento AEE',
+  'Alinhamento com Coordenação',
+  'Atenção / Busca Ativa',
+];
 
 function formatMin(m) {
   const num = Number(m) || 0;
@@ -78,7 +99,7 @@ export default function TeacherDashboard() {
   const [loadingClassData, setLoadingClassData] = useState(false);
   const [sortBy, setSortBy] = useState('name');
 
-  // Modal de Busca e Adição Segura de Estudantes (via Firebase Admin SDK)
+  // Modal de Busca e Adição de Estudantes
   const [isAddStudentModalOpen, setIsAddStudentModalOpen] = useState(false);
   const [studentSearchQuery, setStudentSearchQuery] = useState('');
   const [searchedStudents, setSearchedStudents] = useState([]);
@@ -86,7 +107,45 @@ export default function TeacherDashboard() {
   const [selectedStudentUids, setSelectedStudentUids] = useState([]);
   const [submittingEnrollment, setSubmittingEnrollment] = useState(false);
 
-  // Formulários
+  // Painel / Modal de Perfil Acadêmico Individual do Estudante
+  const [selectedStudentProfileUid, setSelectedStudentProfileUid] = useState(null);
+  const [studentProfileData, setStudentProfileData] = useState(null);
+  const [loadingStudentProfile, setLoadingStudentProfile] = useState(false);
+  const [studentProfileTab, setStudentProfileTab] = useState('trajetoria');
+  const [submittingStudentAction, setSubmittingStudentAction] = useState(false);
+
+  // Formulários do Perfil Acadêmico Individual do Estudante
+  const [individualActivityForm, setIndividualActivityForm] = useState({
+    title: '',
+    subject: 'Matemática e suas Tecnologias',
+    type: 'Atividade Individual',
+    dueDate: '',
+    points: 10,
+    description: '',
+  });
+
+  const [gradeForm, setGradeForm] = useState({
+    title: '',
+    subject: 'Matemática e suas Tecnologias',
+    unit: 'I Unidade',
+    score: '',
+    maxScore: 10,
+    comment: '',
+  });
+
+  const [feedbackForm, setFeedbackForm] = useState({
+    title: '',
+    subject: 'Geral',
+    category: 'Reconhecimento & Evolução',
+    message: '',
+  });
+
+  const [internalNoteForm, setInternalNoteForm] = useState({
+    category: 'Acompanhamento Pedagógico',
+    note: '',
+  });
+
+  // Formulários Gerais da Turma
   const [newClassForm, setNewClassForm] = useState({
     name: '',
     code: '',
@@ -167,7 +226,7 @@ export default function TeacherDashboard() {
     loadInitialData();
   }, [loadInitialData]);
 
-  // Carrega detalhes reais da turma selecionada (estudantes vinculados, conteúdos, atividades, comunicados e auditoria)
+  // Carrega detalhes da turma selecionada (estudantes vinculados, conteúdos, atividades, comunicados e auditoria)
   const loadSelectedClassDetails = useCallback(async () => {
     if (!user || !selectedClass) {
       setStudentsMetrics([]);
@@ -202,9 +261,218 @@ export default function TeacherDashboard() {
     loadSelectedClassDetails();
   }, [loadSelectedClassDetails]);
 
+  // Carrega o Perfil Acadêmico Individual do Estudante selecionado
+  const loadStudentAcademicProfile = useCallback(async (studentUid, classIdHint = selectedClassId) => {
+    if (!user || !studentUid) return;
+    setLoadingStudentProfile(true);
+    try {
+      const data = await TeacherService.getStudentAcademicProfile(user, studentUid, classIdHint);
+      setStudentProfileData(data);
+    } catch (err) {
+      toast.error(err.message || 'Não foi possível carregar o perfil acadêmico do estudante.');
+      setSelectedStudentProfileUid(null);
+      setStudentProfileData(null);
+    } finally {
+      setLoadingStudentProfile(false);
+    }
+  }, [user, selectedClassId]);
+
+  const handleOpenStudentProfile = async (studentUid, initialProfileTab = 'trajetoria') => {
+    if (!studentUid) return;
+    setSelectedStudentProfileUid(studentUid);
+    setStudentProfileTab(initialProfileTab);
+    await loadStudentAcademicProfile(studentUid, selectedClassId);
+  };
+
+  const handleCloseStudentProfile = () => {
+    setSelectedStudentProfileUid(null);
+    setStudentProfileData(null);
+  };
+
   const handleLogout = async () => {
     await logout();
     navigate('/auth');
+  };
+
+  // ── Handlers: Ações Pedagógicas no Perfil Individual do Estudante ──────
+  const resolveContextClassForStudent = () => {
+    if (selectedClassId && studentProfileData?.enrolledClasses?.some(c => c.id === selectedClassId)) {
+      return selectedClass;
+    }
+    return studentProfileData?.enrolledClasses?.[0] || selectedClass || null;
+  };
+
+  const handleAssignIndividualActivity = async (e) => {
+    e.preventDefault();
+    if (!selectedStudentProfileUid) return;
+    if (!individualActivityForm.title.trim()) {
+      toast.error('Informe o título da atividade individual.');
+      return;
+    }
+    setSubmittingStudentAction(true);
+    try {
+      const ctxClass = resolveContextClassForStudent();
+      await TeacherService.assignIndividualActivity(user, {
+        ...individualActivityForm,
+        studentUid: selectedStudentProfileUid,
+        classId: ctxClass?.id || selectedClassId || '',
+      });
+      setIndividualActivityForm(f => ({ ...f, title: '', dueDate: '', description: '' }));
+      toast.success('Atividade individual atribuída ao estudante!');
+      await loadStudentAcademicProfile(selectedStudentProfileUid, ctxClass?.id || selectedClassId);
+    } catch (err) {
+      toast.error(err.message || 'Erro ao atribuir atividade individual.');
+    } finally {
+      setSubmittingStudentAction(false);
+    }
+  };
+
+  const handleDeleteIndividualActivity = async (activityId) => {
+    if (!selectedStudentProfileUid || !activityId) return;
+    try {
+      await TeacherService.deleteIndividualActivity(user, {
+        studentUid: selectedStudentProfileUid,
+        classId: resolveContextClassForStudent()?.id,
+        activityId,
+      });
+      toast.success('Atividade individual removida.');
+      await loadStudentAcademicProfile(selectedStudentProfileUid, selectedClassId);
+    } catch (err) {
+      toast.error(err.message || 'Erro ao remover atividade individual.');
+    }
+  };
+
+  const handleRecordStudentGrade = async (e) => {
+    e.preventDefault();
+    if (!selectedStudentProfileUid) return;
+    if (!gradeForm.title.trim()) {
+      toast.error('Informe o título da avaliação.');
+      return;
+    }
+    if (gradeForm.score === '' || Number.isNaN(Number(gradeForm.score))) {
+      toast.error('Informe uma nota numérica válida.');
+      return;
+    }
+    setSubmittingStudentAction(true);
+    try {
+      const ctxClass = resolveContextClassForStudent();
+      await TeacherService.recordStudentGrade(user, {
+        title: gradeForm.title,
+        subject: gradeForm.subject,
+        unit: gradeForm.unit,
+        notes: gradeForm.comment,
+        studentUid: selectedStudentProfileUid,
+        score: Number(gradeForm.score),
+        maxScore: Number(gradeForm.maxScore) || 10,
+        classId: ctxClass?.id || selectedClassId || '',
+      });
+      setGradeForm(f => ({ ...f, title: '', score: '', comment: '' }));
+      toast.success('Nota registrada no histórico acadêmico do estudante!');
+      await loadStudentAcademicProfile(selectedStudentProfileUid, ctxClass?.id || selectedClassId);
+    } catch (err) {
+      toast.error(err.message || 'Erro ao registrar nota.');
+    } finally {
+      setSubmittingStudentAction(false);
+    }
+  };
+
+  const handleDeleteStudentGrade = async (recordId) => {
+    if (!selectedStudentProfileUid || !recordId) return;
+    try {
+      await TeacherService.deleteStudentGrade(user, {
+        studentUid: selectedStudentProfileUid,
+        classId: resolveContextClassForStudent()?.id,
+        recordId,
+      });
+      toast.success('Registro de avaliação removido.');
+      await loadStudentAcademicProfile(selectedStudentProfileUid, selectedClassId);
+    } catch (err) {
+      toast.error(err.message || 'Erro ao remover avaliação.');
+    }
+  };
+
+  const handleAddPedagogicalFeedback = async (e) => {
+    e.preventDefault();
+    if (!selectedStudentProfileUid) return;
+    if (!feedbackForm.title.trim() || !feedbackForm.message.trim()) {
+      toast.error('Preencha o título e a mensagem do feedback pedagógico.');
+      return;
+    }
+    setSubmittingStudentAction(true);
+    try {
+      const ctxClass = resolveContextClassForStudent();
+      await TeacherService.addPedagogicalFeedback(user, {
+        studentUid: selectedStudentProfileUid,
+        classId: ctxClass?.id || selectedClassId || '',
+        subject: feedbackForm.subject,
+        title: feedbackForm.title,
+        category: feedbackForm.category,
+        comment: feedbackForm.message,
+      });
+      setFeedbackForm(f => ({ ...f, title: '', message: '' }));
+      toast.success('Feedback pedagógico enviado ao estudante!');
+      await loadStudentAcademicProfile(selectedStudentProfileUid, ctxClass?.id || selectedClassId);
+    } catch (err) {
+      toast.error(err.message || 'Erro ao registrar feedback pedagógico.');
+    } finally {
+      setSubmittingStudentAction(false);
+    }
+  };
+
+  const handleDeletePedagogicalFeedback = async (feedbackId) => {
+    if (!selectedStudentProfileUid || !feedbackId) return;
+    try {
+      await TeacherService.deletePedagogicalFeedback(user, {
+        studentUid: selectedStudentProfileUid,
+        classId: resolveContextClassForStudent()?.id,
+        feedbackId,
+      });
+      toast.success('Feedback removido.');
+      await loadStudentAcademicProfile(selectedStudentProfileUid, selectedClassId);
+    } catch (err) {
+      toast.error(err.message || 'Erro ao remover feedback.');
+    }
+  };
+
+  const handleAddStudentInternalNote = async (e) => {
+    e.preventDefault();
+    if (!selectedStudentProfileUid) return;
+    if (!internalNoteForm.note.trim()) {
+      toast.error('Escreva a observação pedagógica interna.');
+      return;
+    }
+    setSubmittingStudentAction(true);
+    try {
+      const ctxClass = resolveContextClassForStudent();
+      await TeacherService.addStudentInternalNote(user, {
+        studentUid: selectedStudentProfileUid,
+        classId: ctxClass?.id || selectedClassId || '',
+        category: internalNoteForm.category,
+        observation: internalNoteForm.note,
+      });
+      setInternalNoteForm(f => ({ ...f, note: '' }));
+      toast.success('Observação interna registrada para a equipe pedagógica.');
+      await loadStudentAcademicProfile(selectedStudentProfileUid, ctxClass?.id || selectedClassId);
+    } catch (err) {
+      toast.error(err.message || 'Erro ao salvar observação interna.');
+    } finally {
+      setSubmittingStudentAction(false);
+    }
+  };
+
+  const handleDeleteStudentInternalNote = async (noteId) => {
+    if (!selectedStudentProfileUid || !noteId) return;
+    try {
+      await TeacherService.deleteStudentInternalNote(user, {
+        studentUid: selectedStudentProfileUid,
+        classId: resolveContextClassForStudent()?.id,
+        noteId,
+      });
+      toast.success('Observação interna removida.');
+      await loadStudentAcademicProfile(selectedStudentProfileUid, selectedClassId);
+    } catch (err) {
+      toast.error(err.message || 'Erro ao remover observação interna.');
+    }
   };
 
   // ── Handlers: Turmas e Busca/Matrícula Segura de Estudantes ─────────────
@@ -308,15 +576,31 @@ export default function TeacherDashboard() {
     }
   };
 
-  const handleUnlinkStudent = async (studentUid) => {
-    if (!selectedClass) return;
+  const handleUnlinkStudent = async (studentUid, targetClassId = selectedClass?.id) => {
+    if (!targetClassId) return;
     try {
-      await TeacherService.removeStudentFromClass(user, selectedClass.id, studentUid);
+      await TeacherService.removeStudentFromClass(user, targetClassId, studentUid);
       toast.success('Estudante removido da turma e operação registrada.');
       await loadInitialData();
       await loadSelectedClassDetails();
+      if (selectedStudentProfileUid === studentUid) {
+        await loadStudentAcademicProfile(studentUid, selectedClassId);
+      }
     } catch (err) {
       toast.error(err.message || 'Não foi possível remover o estudante da turma.');
+    }
+  };
+
+  const handleEnrollStudentFromProfile = async (classIdToEnroll) => {
+    if (!selectedStudentProfileUid || !classIdToEnroll) return;
+    try {
+      await TeacherService.addStudentsToClass(user, classIdToEnroll, [selectedStudentProfileUid]);
+      toast.success('Estudante matriculado na turma selecionada!');
+      await loadInitialData();
+      await loadSelectedClassDetails();
+      await loadStudentAcademicProfile(selectedStudentProfileUid, classIdToEnroll);
+    } catch (err) {
+      toast.error(err.message || 'Erro ao matricular estudante na turma.');
     }
   };
 
@@ -468,7 +752,7 @@ export default function TeacherDashboard() {
       });
       setLastGeneratedCode({ email: inviteForm.targetEmail, code: plainCode });
       setInviteForm({ targetEmail: '', expiresInDays: 7 });
-      toast.success('Convite individual gerado e registrado com hash SHA-256 no servidor!');
+      toast.success('Convite docente individual gerado com sucesso!');
       await loadInitialData();
     } catch (err) {
       toast.error(err.message || 'Erro ao gerar convite.');
@@ -485,7 +769,7 @@ export default function TeacherDashboard() {
     }
   };
 
-  // ── Métricas reais agregadas da turma selecionada ─────
+  // ── Métricas agregadas da turma selecionada ─────
   const totalTasks = studentsMetrics.reduce((a, s) => a + s.tasksCompleted + s.tasksPending, 0);
   const totalCompleted = studentsMetrics.reduce((a, s) => a + s.tasksCompleted, 0);
   const completionRate = totalTasks > 0 ? Math.round((totalCompleted / totalTasks) * 100) : 0;
@@ -509,6 +793,9 @@ export default function TeacherDashboard() {
   const authorizedTeachers = allUsers.filter(
     u => u.role === 'professor' || u.role === 'admin'
   );
+
+  const profileAllTasks = studentProfileData ? [...studentProfileData.tasksCompleted, ...studentProfileData.tasksPending] : [];
+  const profileTotalFocusMinutes = studentProfileData ? studentProfileData.focusSessions.reduce((a, s) => a + (Number(s.durationMinutes) || 0), 0) : 0;
 
   const initials = user?.name?.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase() || '?';
 
@@ -696,7 +983,7 @@ export default function TeacherDashboard() {
         </div>
 
         {/* ═══════════════════════════════════════════════════════════════════
-            ABA 1: VISÃO GERAL & ACOMPANHAMENTO ACADÊMICO REAL
+            ABA 1: VISÃO GERAL & ACOMPANHAMENTO ACADÊMICO
            ═══════════════════════════════════════════════════════════════════ */}
         {activeTab === 'overview' && (
           <>
@@ -708,8 +995,8 @@ export default function TeacherDashboard() {
                 </h2>
                 <p style={{ color: 'var(--color-text-secondary)', maxWidth: 540, margin: '0 auto 18px', fontSize: '0.9rem' }}>
                   {isAdmin
-                    ? 'O painel docente agora trabalha exclusivamente com dados reais no Cloud Firestore. Crie sua primeira turma oficial do CETEP para vincular estudantes, publicar conteúdos e acompanhar o progresso real.'
-                    : 'Você ainda não possui turmas vinculadas ao seu UID docente. Solicite ao Administrador do CETEP Tech Study a atribuição da sua turma.'}
+                    ? 'Crie sua primeira turma oficial do CETEP para vincular estudantes, publicar conteúdos e acompanhar o desenvolvimento acadêmico.'
+                    : 'Você ainda não possui turmas atribuídas ao seu perfil docente. Solicite à coordenação ou administração a atribuição da sua turma.'}
                 </p>
                 {isAdmin && (
                   <button
@@ -731,7 +1018,7 @@ export default function TeacherDashboard() {
                   </p>
                 </div>
 
-                {/* Summary Stats Reais */}
+                {/* Summary Stats */}
                 <div className="grid-4" style={{ marginBottom: 24 }}>
                   {[
                     {
@@ -746,7 +1033,7 @@ export default function TeacherDashboard() {
                       icon: <CheckSquare size={20} />,
                       label: 'Taxa de conclusão',
                       value: `${completionRate}%`,
-                      sub: `${totalCompleted} de ${totalTasks} tarefas reais`,
+                      sub: `${totalCompleted} de ${totalTasks} tarefas`,
                       color: 'hsl(142, 70%, 38%)',
                       bg: 'hsl(142, 60%, 92%)',
                     },
@@ -754,7 +1041,7 @@ export default function TeacherDashboard() {
                       icon: <Clock size={20} />,
                       label: 'Foco médio por aluno',
                       value: formatMin(avgFocus),
-                      sub: 'sessões reais validadas',
+                      sub: 'sessões de estudo registradas',
                       color: 'hsl(38, 90%, 45%)',
                       bg: 'hsl(38, 90%, 93%)',
                     },
@@ -776,11 +1063,16 @@ export default function TeacherDashboard() {
                   ))}
                 </div>
 
-                {/* Tabela Real de Estudantes Vinculados */}
+                {/* Tabela de Estudantes Vinculados */}
                 <div className="card">
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18, flexWrap: 'wrap', gap: 10 }}>
-                    <h3>Acompanhamento individual dos estudantes</h3>
-                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <div>
+                      <h3 style={{ margin: 0 }}>Acompanhamento individual dos estudantes</h3>
+                      <p style={{ margin: '4px 0 0', fontSize: '0.82rem', color: 'var(--color-text-secondary)' }}>
+                        Clique no nome ou na linha de qualquer estudante para abrir seu perfil acadêmico completo, registrar notas, enviar feedbacks e atribuir atividades.
+                      </p>
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                       <span style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>Ordenar por:</span>
                       <select
                         className="form-select"
@@ -807,7 +1099,7 @@ export default function TeacherDashboard() {
 
                   {loadingClassData ? (
                     <div style={{ padding: '24px', textAlign: 'center', color: 'var(--color-text-muted)' }}>
-                      Carregando métricas reais dos estudantes no Cloud Firestore...
+                      Carregando acompanhamento acadêmico dos estudantes...
                     </div>
                   ) : sortedStudents.length === 0 ? (
                     <div style={{
@@ -821,7 +1113,7 @@ export default function TeacherDashboard() {
                         Nenhum estudante vinculado a esta turma ainda.
                       </p>
                       <p style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)', marginBottom: 14 }}>
-                        Não exibimos alunos fictícios. Clique em <strong>Adicionar estudantes</strong> para pesquisar por nome ou e-mail e matricular estudantes reais cadastrados na plataforma.
+                        Clique em <strong>Adicionar estudantes</strong> para pesquisar por nome ou e-mail e matricular estudantes cadastrados na plataforma.
                       </p>
                       <button
                         type="button"
@@ -836,7 +1128,7 @@ export default function TeacherDashboard() {
                       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
                         <thead>
                           <tr style={{ borderBottom: '2px solid var(--color-border)' }}>
-                            {['Estudante', 'E-mail', 'Concluídas', 'Pendentes', 'Foco Total', 'Sequência / XP', 'Última Atividade', 'Status'].map(h => (
+                            {['Estudante', 'E-mail', 'Concluídas', 'Pendentes', 'Foco Total', 'Sequência / XP', 'Última Atividade', 'Status', 'Ação'].map(h => (
                               <th key={h} style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 700, color: 'var(--color-text-secondary)', fontSize: '0.76rem', textTransform: 'uppercase', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>{h}</th>
                             ))}
                           </tr>
@@ -850,8 +1142,30 @@ export default function TeacherDashboard() {
                               : null;
                             const atRisk = (daysAgo !== null && daysAgo >= 3) || s.tasksPending >= 10;
                             return (
-                              <tr key={s.uid} style={{ borderBottom: '1px solid var(--color-border)', background: i % 2 === 0 ? 'transparent' : 'var(--color-bg-subtle)' }}>
-                                <td style={{ padding: '12px', fontWeight: 600 }}>{s.name}</td>
+                              <tr
+                                key={s.uid}
+                                onClick={() => handleOpenStudentProfile(s.uid)}
+                                role="button"
+                                tabIndex={0}
+                                onKeyDown={e => {
+                                  if (e.key === 'Enter' || e.key === ' ') {
+                                    e.preventDefault();
+                                    handleOpenStudentProfile(s.uid);
+                                  }
+                                }}
+                                id={`student-row-${s.uid}`}
+                                style={{
+                                  borderBottom: '1px solid var(--color-border)',
+                                  background: i % 2 === 0 ? 'transparent' : 'var(--color-bg-subtle)',
+                                  cursor: 'pointer',
+                                  transition: 'background 0.15s',
+                                }}
+                              >
+                                <td style={{ padding: '12px', fontWeight: 700, color: 'var(--color-primary)' }}>
+                                  <span style={{ textDecoration: 'underline', textUnderlineOffset: 3 }}>
+                                    {s.name}
+                                  </span>
+                                </td>
                                 <td style={{ padding: '12px', fontSize: '0.82rem', color: 'var(--color-text-secondary)' }}>{s.email}</td>
                                 <td style={{ padding: '12px' }}>
                                   <span style={{ fontWeight: 600, marginRight: 6 }}>{s.tasksCompleted}</span>
@@ -875,6 +1189,17 @@ export default function TeacherDashboard() {
                                   ) : (
                                     <span className="badge badge-success">✓ Regular</span>
                                   )}
+                                </td>
+                                <td style={{ padding: '12px' }} onClick={e => e.stopPropagation()}>
+                                  <button
+                                    type="button"
+                                    className="btn btn-secondary btn-sm"
+                                    onClick={() => handleOpenStudentProfile(s.uid)}
+                                    id={`view-student-profile-btn-${s.uid}`}
+                                    style={{ display: 'inline-flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap' }}
+                                  >
+                                    <Eye size={14} /> Ver perfil
+                                  </button>
                                 </td>
                               </tr>
                             );
@@ -947,9 +1272,6 @@ export default function TeacherDashboard() {
                       <h4 style={{ fontSize: '0.92rem', margin: 0 }}>
                         Estudantes Vinculados ({studentsMetrics.length})
                       </h4>
-                      <span style={{ fontSize: '0.76rem', color: 'var(--color-text-muted)' }}>
-                        Validação e matrícula via Firebase Admin SDK
-                      </span>
                     </div>
 
                     {studentsMetrics.length === 0 ? (
@@ -982,20 +1304,34 @@ export default function TeacherDashboard() {
                               gap: 10,
                             }}
                           >
-                            <div>
-                              <div style={{ fontWeight: 600 }}>{st.name}</div>
+                            <div
+                              onClick={() => handleOpenStudentProfile(st.uid)}
+                              style={{ cursor: 'pointer', flex: 1 }}
+                            >
+                              <div style={{ fontWeight: 700, color: 'var(--color-primary)', textDecoration: 'underline', textUnderlineOffset: 3 }}>
+                                {st.name}
+                              </div>
                               <div style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
                                 {st.email} · {st.tasksCompleted} concluída(s) · {formatMin(st.focusMinutes)} foco
                               </div>
                             </div>
-                            <button
-                              type="button"
-                              className="btn btn-ghost btn-sm"
-                              onClick={() => handleUnlinkStudent(st.uid)}
-                              style={{ color: 'var(--color-danger)' }}
-                            >
-                              <UserMinus size={14} /> Remover
-                            </button>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <button
+                                type="button"
+                                className="btn btn-secondary btn-sm"
+                                onClick={() => handleOpenStudentProfile(st.uid)}
+                              >
+                                <Eye size={14} /> Perfil
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn-ghost btn-sm"
+                                onClick={() => handleUnlinkStudent(st.uid)}
+                                style={{ color: 'var(--color-danger)' }}
+                              >
+                                <UserMinus size={14} /> Remover
+                              </button>
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -1112,8 +1448,8 @@ export default function TeacherDashboard() {
                 </h3>
                 <p style={{ fontSize: '0.84rem', color: 'var(--color-text-secondary)', marginBottom: 14 }}>
                   {isAdmin
-                    ? 'Como administrador, você visualiza e gerencia todas as turmas e matrículas do CETEP.'
-                    : 'Você visualiza exclusivamente as turmas às quais seu perfil docente foi atribuído pelo administrador.'}
+                    ? 'Como administrador, você visualiza e gerencia todas as turmas, atribuições docentes e matrículas do CETEP.'
+                    : 'Você visualiza as turmas atribuídas ao seu perfil docente e possui autonomia para pesquisar e matricular estudantes.'}
                 </p>
 
                 {classes.length === 0 ? (
@@ -1227,7 +1563,7 @@ export default function TeacherDashboard() {
                       />
                     </div>
                     <button type="submit" className="btn btn-primary" id="teacher-create-class-btn">
-                      <Plus size={16} /> Criar Turma no Cloud Firestore
+                      <Plus size={16} /> Criar Turma Oficial
                     </button>
                   </form>
                 </div>
@@ -1595,7 +1931,7 @@ export default function TeacherDashboard() {
             <div className="card">
               <h3 style={{ marginBottom: 8 }}>🛡️ Controle de Perfis e Autorização de Professores</h3>
               <p style={{ fontSize: '0.88rem', color: 'var(--color-text-secondary)', marginBottom: 18 }}>
-                Todo cadastro público nasce como <strong>Aluno</strong>. Abaixo você pode promover uma conta existente para <strong>Professor</strong> (vinculando o UID do Firebase ao perfil docente) ou <strong>Administrador</strong>, protegido pelas Firestore Security Rules.
+                Todo cadastro público nasce como <strong>Aluno</strong>. Abaixo você pode promover uma conta existente para <strong>Professor</strong> ou <strong>Administrador</strong> e acessar o perfil acadêmico individual de qualquer estudante.
               </p>
 
               {allUsers.length === 0 ? (
@@ -1605,7 +1941,7 @@ export default function TeacherDashboard() {
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.88rem' }}>
                     <thead>
                       <tr style={{ borderBottom: '2px solid var(--color-border)' }}>
-                        {['Nome', 'E-mail', 'UID Firebase', 'Perfil Atual', 'Alterar Perfil'].map(h => (
+                        {['Nome', 'E-mail', 'Perfil Atual', 'Alterar Perfil', 'Trajetória Acadêmica'].map(h => (
                           <th key={h} style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 700, color: 'var(--color-text-secondary)', fontSize: '0.75rem', textTransform: 'uppercase' }}>{h}</th>
                         ))}
                       </tr>
@@ -1618,9 +1954,6 @@ export default function TeacherDashboard() {
                           <tr key={uid} style={{ borderBottom: '1px solid var(--color-border)' }}>
                             <td style={{ padding: '10px 12px', fontWeight: 600 }}>{u.name}</td>
                             <td style={{ padding: '10px 12px', color: 'var(--color-text-secondary)' }}>{u.email}</td>
-                            <td style={{ padding: '10px 12px' }}>
-                              <code style={{ fontSize: '0.76rem' }}>{uid}</code>
-                            </td>
                             <td style={{ padding: '10px 12px' }}>
                               <span className={`badge ${u.role === 'admin' ? 'badge-primary' : u.role === 'professor' ? 'badge-success' : 'badge-warning'}`}>
                                 {u.role === 'admin' ? 'Administrador' : u.role === 'professor' ? 'Professor' : 'Aluno'}
@@ -1639,6 +1972,15 @@ export default function TeacherDashboard() {
                                 <option value="professor">Professor Autorizado</option>
                                 <option value="admin">Administrador</option>
                               </select>
+                            </td>
+                            <td style={{ padding: '10px 12px' }}>
+                              <button
+                                type="button"
+                                className="btn btn-secondary btn-sm"
+                                onClick={() => handleOpenStudentProfile(uid)}
+                              >
+                                <Eye size={14} /> Abrir Perfil
+                              </button>
                             </td>
                           </tr>
                         );
@@ -1702,13 +2044,13 @@ export default function TeacherDashboard() {
               )}
             </div>
 
-            {/* 3. Sistema de Convites Individuais (Uso Único + Hash SHA-256 no Servidor) */}
+            {/* 3. Sistema de Convites Individuais */}
             <div className="card">
               <h3 style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
                 <KeyRound size={18} color="var(--color-primary)" /> Convites Docentes Individuais (Uso Único & Validade)
               </h3>
               <p style={{ fontSize: '0.86rem', color: 'var(--color-text-secondary)', marginBottom: 16 }}>
-                Nenhum código universal fica no JavaScript. Cada convite é vinculado ao e-mail específico do docente, possui data de expiração e armazena apenas o <code>codeHash</code> (SHA-256) na coleção protegida <code>/teacherInvites</code> do Cloud Firestore.
+                Cada convite é individual, vinculado ao e-mail específico do docente convidado, possui uso único e prazo de expiração definido pela coordenação.
               </p>
 
               <form onSubmit={handleCreateInvite} style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 18 }}>
@@ -1750,7 +2092,7 @@ export default function TeacherDashboard() {
                   <strong>Código de uso único gerado para {lastGeneratedCode.email}:</strong>{' '}
                   <code style={{ fontWeight: 800, fontSize: '0.95rem' }}>{lastGeneratedCode.code}</code>
                   <div style={{ fontSize: '0.78rem', marginTop: 4 }}>
-                    Copie este código agora — por segurança, apenas o hash SHA-256 foi salvo no banco de dados.
+                    Copie este código agora e encaminhe ao docente — por segurança, o código completo é exibido apenas no momento da geração.
                   </div>
                 </div>
               )}
@@ -1793,7 +2135,891 @@ export default function TeacherDashboard() {
       </div>
 
       {/* ═══════════════════════════════════════════════════════════════════
-          MODAL: BUSCAR E ADICIONAR ESTUDANTES À TURMA (VIA FIREBASE ADMIN SDK)
+          MODAL: PERFIL ACADÊMICO INDIVIDUAL DO ESTUDANTE
+         ═══════════════════════════════════════════════════════════════════ */}
+      {selectedStudentProfileUid && (
+        <div
+          className="modal-backdrop"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(15, 23, 42, 0.72)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 20,
+            zIndex: 1050,
+          }}
+          onClick={e => {
+            if (e.target === e.currentTarget) handleCloseStudentProfile();
+          }}
+        >
+          <div
+            className="card"
+            style={{
+              width: '100%',
+              maxWidth: 960,
+              maxHeight: '92vh',
+              display: 'flex',
+              flexDirection: 'column',
+              padding: '24px 28px',
+              boxShadow: 'var(--shadow-lg)',
+              overflow: 'hidden',
+            }}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="student-academic-profile-title"
+          >
+            {loadingStudentProfile || !studentProfileData ? (
+              <div style={{ padding: 48, textAlign: 'center', color: 'var(--color-text-secondary)' }}>
+                Carregando perfil acadêmico individual do estudante...
+              </div>
+            ) : (
+              <>
+                {/* Cabeçalho do Perfil Acadêmico */}
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'flex-start',
+                  gap: 16,
+                  paddingBottom: 16,
+                  borderBottom: '1px solid var(--color-border)',
+                  flexWrap: 'wrap',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                    <div style={{
+                      width: 52,
+                      height: 52,
+                      borderRadius: 14,
+                      background: 'var(--color-primary)',
+                      color: '#fff',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontWeight: 800,
+                      fontSize: '1.15rem',
+                    }}>
+                      {(studentProfileData.student.name || '?')
+                        .split(' ')
+                        .map(p => p[0])
+                        .slice(0, 2)
+                        .join('')
+                        .toUpperCase()}
+                    </div>
+                    <div>
+                      <h2 id="student-academic-profile-title" style={{ margin: '0 0 4px', fontSize: '1.25rem' }}>
+                        {studentProfileData.student.name}
+                      </h2>
+                      <div style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)', display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
+                        <span>{studentProfileData.student.email}</span>
+                        <span>•</span>
+                        <span className="badge badge-primary">
+                          🔥 {studentProfileData.gamification.streakDays}d sequência · Nível {studentProfileData.gamification.level} ({studentProfileData.gamification.points} XP)
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => loadStudentAcademicProfile(selectedStudentProfileUid, selectedClassId)}
+                    >
+                      <RefreshCw size={14} /> Atualizar
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      onClick={handleCloseStudentProfile}
+                      aria-label="Fechar perfil do estudante"
+                    >
+                      <X size={20} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Abas Internas do Perfil Acadêmico */}
+                <div style={{
+                  display: 'flex',
+                  gap: 8,
+                  flexWrap: 'wrap',
+                  padding: '12px 0',
+                  borderBottom: '1px solid var(--color-border)',
+                }}>
+                  {[
+                    { id: 'trajetoria', label: 'Visão Geral & Trajetória', icon: <TrendingUp size={15} /> },
+                    { id: 'atividades_individuais', label: `Atividades Individuais (${studentProfileData.individualActivities.length})`, icon: <ClipboardList size={15} /> },
+                    { id: 'notas', label: `Notas & Avaliações (${studentProfileData.academicRecords.length})`, icon: <Award size={15} /> },
+                    { id: 'feedbacks', label: `Feedbacks Pedagógicos (${studentProfileData.pedagogicalFeedbacks.length})`, icon: <MessageSquare size={15} /> },
+                    { id: 'observacoes_internas', label: `Observações Internas (${studentProfileData.internalNotes.length})`, icon: <Lock size={15} /> },
+                  ].map(pt => (
+                    <button
+                      key={pt.id}
+                      type="button"
+                      onClick={() => setStudentProfileTab(pt.id)}
+                      id={`student-profile-tab-${pt.id}`}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        padding: '7px 13px',
+                        borderRadius: 8,
+                        fontWeight: 600,
+                        fontSize: '0.82rem',
+                        cursor: 'pointer',
+                        border: studentProfileTab === pt.id ? '1px solid var(--color-primary)' : '1px solid var(--color-border)',
+                        background: studentProfileTab === pt.id ? 'var(--color-primary)' : 'var(--color-bg-subtle)',
+                        color: studentProfileTab === pt.id ? '#fff' : 'var(--color-text-secondary)',
+                      }}
+                    >
+                      {pt.icon}
+                      {pt.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Conteúdo Rolável do Perfil Acadêmico */}
+                <div style={{ flex: 1, overflowY: 'auto', paddingTop: 18, paddingRight: 4 }}>
+                  {/* ── SUB-ABA 1: VISÃO GERAL, TURMAS, DISCIPLINAS & EVOLUÇÃO ── */}
+                  {studentProfileTab === 'trajetoria' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                      {/* Cards de Resumo de Evolução */}
+                      <div className="grid-4" style={{ gap: 12 }}>
+                        <div style={{ padding: '12px 14px', borderRadius: 10, background: 'var(--color-bg-subtle)', border: '1px solid var(--color-border)' }}>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Tarefas Concluídas</div>
+                          <div style={{ fontSize: '1.35rem', fontWeight: 800, marginTop: 4, color: 'var(--color-success)' }}>
+                            {studentProfileData.tasksCompleted.length}
+                          </div>
+                          <div style={{ fontSize: '0.76rem', color: 'var(--color-text-secondary)' }}>
+                            {studentProfileData.tasksPending.length} pendente(s)
+                          </div>
+                        </div>
+                        <div style={{ padding: '12px 14px', borderRadius: 10, background: 'var(--color-bg-subtle)', border: '1px solid var(--color-border)' }}>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Tempo Total de Estudo</div>
+                          <div style={{ fontSize: '1.35rem', fontWeight: 800, marginTop: 4 }}>
+                            {formatMin(profileTotalFocusMinutes)}
+                          </div>
+                          <div style={{ fontSize: '0.76rem', color: 'var(--color-text-secondary)' }}>
+                            {studentProfileData.focusSessions.length} sessão(ões) de foco
+                          </div>
+                        </div>
+                        <div style={{ padding: '12px 14px', borderRadius: 10, background: 'var(--color-bg-subtle)', border: '1px solid var(--color-border)' }}>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Sequência & Engajamento</div>
+                          <div style={{ fontSize: '1.35rem', fontWeight: 800, marginTop: 4 }}>
+                            <Flame size={18} style={{ display: 'inline', color: '#f59e0b', marginRight: 4 }} />
+                            {studentProfileData.gamification.streakDays} dias
+                          </div>
+                          <div style={{ fontSize: '0.76rem', color: 'var(--color-text-secondary)' }}>
+                            {studentProfileData.gamification.points} XP acumulado
+                          </div>
+                        </div>
+                        <div style={{ padding: '12px 14px', borderRadius: 10, background: 'var(--color-bg-subtle)', border: '1px solid var(--color-border)' }}>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Avaliações & Atividades</div>
+                          <div style={{ fontSize: '1.35rem', fontWeight: 800, marginTop: 4 }}>
+                            {studentProfileData.academicRecords.length} nota(s)
+                          </div>
+                          <div style={{ fontSize: '0.76rem', color: 'var(--color-text-secondary)' }}>
+                            {studentProfileData.individualActivities.length} atividade(s) individual(is)
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Turmas Matriculadas & Disciplinas Vinculadas */}
+                      <div className="grid-2" style={{ gap: 18 }}>
+                        <div style={{ padding: 16, borderRadius: 12, border: '1px solid var(--color-border)', background: 'var(--color-bg-subtle)' }}>
+                          <h4 style={{ margin: '0 0 10px', fontSize: '0.94rem' }}>
+                            🏫 Turmas em que está matriculado ({studentProfileData.enrolledClasses.length})
+                          </h4>
+                          {studentProfileData.enrolledClasses.length === 0 ? (
+                            <p style={{ fontSize: '0.84rem', color: 'var(--color-text-muted)', margin: 0 }}>
+                              O estudante não está matriculado em nenhuma turma no momento.
+                            </p>
+                          ) : (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                              {studentProfileData.enrolledClasses.map(cls => (
+                                <div
+                                  key={cls.id}
+                                  style={{
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center',
+                                    padding: '8px 12px',
+                                    borderRadius: 8,
+                                    background: 'var(--color-bg-card)',
+                                    border: '1px solid var(--color-border)',
+                                    fontSize: '0.84rem',
+                                  }}
+                                >
+                                  <div>
+                                    <div style={{ fontWeight: 700 }}>{cls.name}</div>
+                                    <div style={{ fontSize: '0.76rem', color: 'var(--color-text-secondary)' }}>
+                                      {cls.course} · Turno {cls.shift} ({cls.year})
+                                    </div>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    className="btn btn-ghost btn-sm"
+                                    onClick={() => handleUnlinkStudent(selectedStudentProfileUid, cls.id)}
+                                    style={{ color: 'var(--color-danger)' }}
+                                  >
+                                    <UserMinus size={13} /> Desvincular
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* Se houver turmas autorizadas em que o aluno ainda não está matriculado, permite matricular */}
+                          {classes.some(c => !studentProfileData.enrolledClasses.some(ec => ec.id === c.id)) && (
+                            <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--color-border)', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                              {classes
+                                .filter(c => !studentProfileData.enrolledClasses.some(ec => ec.id === c.id))
+                                .map(c => (
+                                  <button
+                                    key={c.id}
+                                    type="button"
+                                    className="btn btn-secondary btn-sm"
+                                    onClick={() => handleEnrollStudentFromProfile(c.id)}
+                                  >
+                                    <UserPlus size={13} /> Matricular em {c.name}
+                                  </button>
+                                ))}
+                            </div>
+                          )}
+                        </div>
+
+                        <div style={{ padding: 16, borderRadius: 12, border: '1px solid var(--color-border)', background: 'var(--color-bg-subtle)' }}>
+                          <h4 style={{ margin: '0 0 10px', fontSize: '0.94rem' }}>
+                            📚 Disciplinas Vinculadas ({studentProfileData.linkedSubjects.length})
+                          </h4>
+                          {studentProfileData.linkedSubjects.length === 0 ? (
+                            <p style={{ fontSize: '0.84rem', color: 'var(--color-text-muted)', margin: 0 }}>
+                              Nenhuma disciplina vinculada às turmas do estudante.
+                            </p>
+                          ) : (
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                              {studentProfileData.linkedSubjects.map(subj => (
+                                <span key={subj} className="chip" style={{ padding: '5px 10px', fontSize: '0.8rem' }}>
+                                  {subj}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Atividades Concluídas e Pendentes + Histórico de Sessões de Estudo */}
+                      <div className="grid-2" style={{ gap: 18 }}>
+                        <div style={{ padding: 16, borderRadius: 12, border: '1px solid var(--color-border)', background: 'var(--color-bg-subtle)' }}>
+                          <h4 style={{ margin: '0 0 10px', fontSize: '0.94rem' }}>
+                            ✅ Tarefas & Atividades do Estudante ({profileAllTasks.length})
+                          </h4>
+                          {profileAllTasks.length === 0 ? (
+                            <p style={{ fontSize: '0.84rem', color: 'var(--color-text-muted)', margin: 0 }}>
+                              Nenhuma tarefa pessoal registrada pelo estudante até o momento.
+                            </p>
+                          ) : (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 240, overflowY: 'auto' }}>
+                              {profileAllTasks.map(t => (
+                                <div
+                                  key={t.id}
+                                  style={{
+                                    padding: '8px 12px',
+                                    borderRadius: 8,
+                                    background: 'var(--color-bg-card)',
+                                    border: '1px solid var(--color-border)',
+                                    fontSize: '0.83rem',
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center',
+                                    gap: 8,
+                                  }}
+                                >
+                                  <div>
+                                    <div style={{ fontWeight: 600 }}>{t.title}</div>
+                                    <div style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)' }}>
+                                      {t.subject || 'Geral'} {t.dueDate ? `· Prazo: ${t.dueDate}` : ''}
+                                    </div>
+                                  </div>
+                                  <span className={`badge ${t.status === 'completed' ? 'badge-success' : 'badge-warning'}`}>
+                                    {t.status === 'completed' ? 'Concluída' : 'Pendente'}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        <div style={{ padding: 16, borderRadius: 12, border: '1px solid var(--color-border)', background: 'var(--color-bg-subtle)' }}>
+                          <h4 style={{ margin: '0 0 10px', fontSize: '0.94rem' }}>
+                            ⏱️ Histórico de Sessões de Estudo ({studentProfileData.focusSessions.length})
+                          </h4>
+                          {studentProfileData.focusSessions.length === 0 ? (
+                            <p style={{ fontSize: '0.84rem', color: 'var(--color-text-muted)', margin: 0 }}>
+                              Nenhuma sessão de foco concluída até o momento.
+                            </p>
+                          ) : (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 240, overflowY: 'auto' }}>
+                              {studentProfileData.focusSessions.slice(0, 15).map(sess => (
+                                <div
+                                  key={sess.id}
+                                  style={{
+                                    padding: '8px 12px',
+                                    borderRadius: 8,
+                                    background: 'var(--color-bg-card)',
+                                    border: '1px solid var(--color-border)',
+                                    fontSize: '0.83rem',
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center',
+                                    gap: 8,
+                                  }}
+                                >
+                                  <div>
+                                    <div style={{ fontWeight: 600 }}>{sess.subject || 'Sessão de Estudo'}</div>
+                                    <div style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)' }}>
+                                      {sess.completedAt ? new Date(sess.completedAt).toLocaleString('pt-BR') : sess.date}
+                                    </div>
+                                  </div>
+                                  <span className="badge badge-primary">
+                                    {formatMin(sess.durationMinutes)}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Conteúdos e Atividades Atribuídos pelas Turmas */}
+                      <div style={{ padding: 16, borderRadius: 12, border: '1px solid var(--color-border)', background: 'var(--color-bg-subtle)' }}>
+                        <h4 style={{ margin: '0 0 10px', fontSize: '0.94rem' }}>
+                          📋 Conteúdos e Atividades Atribuídos ({studentProfileData.classContents.length + studentProfileData.classActivities.length + studentProfileData.individualActivities.length})
+                        </h4>
+                        {studentProfileData.classContents.length === 0 &&
+                         studentProfileData.classActivities.length === 0 &&
+                         studentProfileData.individualActivities.length === 0 ? (
+                          <p style={{ fontSize: '0.84rem', color: 'var(--color-text-muted)', margin: 0 }}>
+                            Nenhum conteúdo ou atividade atribuído para este estudante ainda.
+                          </p>
+                        ) : (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                            {studentProfileData.individualActivities.map(ia => (
+                              <div key={`ind-${ia.id}`} style={{ padding: '8px 12px', borderRadius: 8, background: 'var(--color-bg-card)', border: '1px solid var(--color-border)', fontSize: '0.83rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div>
+                                  <strong>[Individual] {ia.title}</strong> · <span style={{ color: 'var(--color-text-secondary)' }}>{ia.subject}</span>
+                                </div>
+                                <span className={`badge ${ia.status === 'completed' ? 'badge-success' : 'badge-warning'}`}>
+                                  {ia.status === 'completed' ? 'Concluída' : 'Pendente'}
+                                </span>
+                              </div>
+                            ))}
+                            {studentProfileData.classActivities.map(ca => (
+                              <div key={`clsact-${ca.id}`} style={{ padding: '8px 12px', borderRadius: 8, background: 'var(--color-bg-card)', border: '1px solid var(--color-border)', fontSize: '0.83rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div>
+                                  <strong>[{ca.className}] {ca.title}</strong> · <span style={{ color: 'var(--color-text-secondary)' }}>{ca.subject}</span>
+                                </div>
+                                <span className="chip">{ca.dueDate ? `Prazo: ${ca.dueDate}` : ca.type}</span>
+                              </div>
+                            ))}
+                            {studentProfileData.classContents.map(cc => (
+                              <div key={`clscnt-${cc.id}`} style={{ padding: '8px 12px', borderRadius: 8, background: 'var(--color-bg-card)', border: '1px solid var(--color-border)', fontSize: '0.83rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div>
+                                  <strong>[Conteúdo · {cc.className}] {cc.title}</strong> · <span style={{ color: 'var(--color-text-secondary)' }}>{cc.subject}</span>
+                                </div>
+                                <span className="chip">Material de estudo</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ── SUB-ABA 2: ATRIBUIR ATIVIDADES INDIVIDUAIS ── */}
+                  {studentProfileTab === 'atividades_individuais' && (
+                    <div className="grid-2" style={{ gap: 20, alignItems: 'start' }}>
+                      <div style={{ padding: 16, borderRadius: 12, border: '1px solid var(--color-border)', background: 'var(--color-bg-subtle)' }}>
+                        <h4 style={{ margin: '0 0 12px' }}>➕ Atribuir Atividade Individual</h4>
+                        <form onSubmit={handleAssignIndividualActivity}>
+                          <div className="form-group">
+                            <label className="form-label">Título da Atividade *</label>
+                            <input
+                              className="form-input"
+                              placeholder="Ex: Exercício Guiado de Nivelamento — Frações"
+                              value={individualActivityForm.title}
+                              onChange={e => setIndividualActivityForm(f => ({ ...f, title: e.target.value }))}
+                              id="individual-activity-title-input"
+                            />
+                          </div>
+                          <div className="grid-2">
+                            <div className="form-group">
+                              <label className="form-label">Disciplina</label>
+                              <select
+                                className="form-select"
+                                value={individualActivityForm.subject}
+                                onChange={e => setIndividualActivityForm(f => ({ ...f, subject: e.target.value }))}
+                              >
+                                {SUBJECT_GROUPS.map(grp => (
+                                  <optgroup key={grp.id} label={grp.shortLabel}>
+                                    {grp.subjects.map(s => <option key={s} value={s}>{s}</option>)}
+                                  </optgroup>
+                                ))}
+                              </select>
+                            </div>
+                            <div className="form-group">
+                              <label className="form-label">Prazo de Entrega</label>
+                              <input
+                                type="date"
+                                className="form-input"
+                                value={individualActivityForm.dueDate}
+                                onChange={e => setIndividualActivityForm(f => ({ ...f, dueDate: e.target.value }))}
+                              />
+                            </div>
+                          </div>
+                          <div className="form-group">
+                            <label className="form-label">Orientações Pedagógicas / Passo a Passo</label>
+                            <textarea
+                              className="form-textarea"
+                              rows={3}
+                              placeholder="Descreva as instruções personalizadas para o estudante..."
+                              value={individualActivityForm.description}
+                              onChange={e => setIndividualActivityForm(f => ({ ...f, description: e.target.value }))}
+                            />
+                          </div>
+                          <button
+                            type="submit"
+                            className="btn btn-primary"
+                            disabled={submittingStudentAction}
+                            id="submit-individual-activity-btn"
+                          >
+                            <Plus size={15} /> Atribuir ao Estudante
+                          </button>
+                        </form>
+                      </div>
+
+                      <div>
+                        <h4 style={{ margin: '0 0 12px' }}>
+                          Atividades Individuais do Estudante ({studentProfileData.individualActivities.length})
+                        </h4>
+                        {studentProfileData.individualActivities.length === 0 ? (
+                          <p style={{ fontSize: '0.86rem', color: 'var(--color-text-muted)' }}>
+                            Nenhuma atividade individual atribuída a este estudante ainda.
+                          </p>
+                        ) : (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                            {studentProfileData.individualActivities.map(act => (
+                              <div
+                                key={act.id}
+                                style={{
+                                  padding: '12px 14px',
+                                  borderRadius: 10,
+                                  border: '1px solid var(--color-border)',
+                                  background: 'var(--color-bg-subtle)',
+                                }}
+                              >
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                                  <div>
+                                    <div style={{ fontWeight: 700, fontSize: '0.92rem' }}>{act.title}</div>
+                                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
+                                      <span className="chip">{act.subject}</span>
+                                      {act.dueDate && <span className="chip">Prazo: {act.dueDate}</span>}
+                                      <span className={`badge ${act.status === 'completed' ? 'badge-success' : 'badge-warning'}`}>
+                                        {act.status === 'completed' ? 'Concluída pelo aluno' : 'Pendente'}
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    className="btn btn-ghost btn-sm"
+                                    onClick={() => handleDeleteIndividualActivity(act.id)}
+                                    style={{ color: 'var(--color-danger)' }}
+                                  >
+                                    <Trash2 size={14} />
+                                  </button>
+                                </div>
+                                {act.description && (
+                                  <p style={{ fontSize: '0.84rem', color: 'var(--color-text-secondary)', margin: '8px 0 0' }}>
+                                    {act.description}
+                                  </p>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ── SUB-ABA 3: REGISTRAR NOTAS E RESULTADOS DE AVALIAÇÕES ── */}
+                  {studentProfileTab === 'notas' && (
+                    <div className="grid-2" style={{ gap: 20, alignItems: 'start' }}>
+                      <div style={{ padding: 16, borderRadius: 12, border: '1px solid var(--color-border)', background: 'var(--color-bg-subtle)' }}>
+                        <h4 style={{ margin: '0 0 12px' }}>🏆 Registrar Nota / Avaliação</h4>
+                        <form onSubmit={handleRecordStudentGrade}>
+                          <div className="form-group">
+                            <label className="form-label">Avaliação / Referência *</label>
+                            <input
+                              className="form-input"
+                              placeholder="Ex: Avaliação Prática — Banco de Dados"
+                              value={gradeForm.title}
+                              onChange={e => setGradeForm(f => ({ ...f, title: e.target.value }))}
+                              id="student-grade-title-input"
+                            />
+                          </div>
+                          <div className="grid-2">
+                            <div className="form-group">
+                              <label className="form-label">Disciplina</label>
+                              <select
+                                className="form-select"
+                                value={gradeForm.subject}
+                                onChange={e => setGradeForm(f => ({ ...f, subject: e.target.value }))}
+                              >
+                                {SUBJECT_GROUPS.map(grp => (
+                                  <optgroup key={grp.id} label={grp.shortLabel}>
+                                    {grp.subjects.map(s => <option key={s} value={s}>{s}</option>)}
+                                  </optgroup>
+                                ))}
+                              </select>
+                            </div>
+                            <div className="form-group">
+                              <label className="form-label">Unidade / Período</label>
+                              <select
+                                className="form-select"
+                                value={gradeForm.unit}
+                                onChange={e => setGradeForm(f => ({ ...f, unit: e.target.value }))}
+                              >
+                                {EVALUATION_UNITS.map(u => <option key={u} value={u}>{u}</option>)}
+                              </select>
+                            </div>
+                          </div>
+                          <div className="grid-2">
+                            <div className="form-group">
+                              <label className="form-label">Nota Obtida *</label>
+                              <input
+                                type="number"
+                                step="0.1"
+                                min={0}
+                                max={100}
+                                className="form-input"
+                                placeholder="Ex: 8.5"
+                                value={gradeForm.score}
+                                onChange={e => setGradeForm(f => ({ ...f, score: e.target.value }))}
+                                id="student-grade-score-input"
+                              />
+                            </div>
+                            <div className="form-group">
+                              <label className="form-label">Valor Máximo</label>
+                              <input
+                                type="number"
+                                step="0.5"
+                                min={1}
+                                max={100}
+                                className="form-input"
+                                value={gradeForm.maxScore}
+                                onChange={e => setGradeForm(f => ({ ...f, maxScore: Number(e.target.value) }))}
+                              />
+                            </div>
+                          </div>
+                          <div className="form-group">
+                            <label className="form-label">Observação da Avaliação (visível ao aluno)</label>
+                            <textarea
+                              className="form-textarea"
+                              rows={2}
+                              placeholder="Comentário construtivo sobre o resultado..."
+                              value={gradeForm.comment}
+                              onChange={e => setGradeForm(f => ({ ...f, comment: e.target.value }))}
+                            />
+                          </div>
+                          <button
+                            type="submit"
+                            className="btn btn-primary"
+                            disabled={submittingStudentAction}
+                            id="submit-student-grade-btn"
+                          >
+                            <Plus size={15} /> Registrar Nota
+                          </button>
+                        </form>
+                      </div>
+
+                      <div>
+                        <h4 style={{ margin: '0 0 12px' }}>
+                          Histórico de Notas & Avaliações ({studentProfileData.academicRecords.length})
+                        </h4>
+                        {studentProfileData.academicRecords.length === 0 ? (
+                          <p style={{ fontSize: '0.86rem', color: 'var(--color-text-muted)' }}>
+                            Nenhuma avaliação registrada para este estudante ainda.
+                          </p>
+                        ) : (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                            {studentProfileData.academicRecords.map(rec => (
+                              <div
+                                key={rec.id}
+                                style={{
+                                  padding: '12px 14px',
+                                  borderRadius: 10,
+                                  border: '1px solid var(--color-border)',
+                                  background: 'var(--color-bg-subtle)',
+                                }}
+                              >
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                                  <div>
+                                    <div style={{ fontWeight: 700, fontSize: '0.92rem' }}>{rec.title}</div>
+                                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
+                                      <span className="chip">{rec.subject}</span>
+                                      <span className="chip">{rec.unit}</span>
+                                      <span className="badge badge-success" style={{ fontSize: '0.8rem' }}>
+                                        Nota: {rec.score} / {rec.maxScore}
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    className="btn btn-ghost btn-sm"
+                                    onClick={() => handleDeleteStudentGrade(rec.id)}
+                                    style={{ color: 'var(--color-danger)' }}
+                                  >
+                                    <Trash2 size={14} />
+                                  </button>
+                                </div>
+                                {rec.notes && (
+                                  <p style={{ fontSize: '0.84rem', color: 'var(--color-text-secondary)', margin: '8px 0 0' }}>
+                                    {rec.notes}
+                                  </p>
+                                )}
+                                <div style={{ fontSize: '0.74rem', color: 'var(--color-text-muted)', marginTop: 6 }}>
+                                  Registrado por {rec.authorName} em {rec.createdAt ? new Date(rec.createdAt).toLocaleDateString('pt-BR') : ''}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ── SUB-ABA 4: FEEDBACKS E COMENTÁRIOS PEDAGÓGICOS ── */}
+                  {studentProfileTab === 'feedbacks' && (
+                    <div className="grid-2" style={{ gap: 20, alignItems: 'start' }}>
+                      <div style={{ padding: 16, borderRadius: 12, border: '1px solid var(--color-border)', background: 'var(--color-bg-subtle)' }}>
+                        <h4 style={{ margin: '0 0 12px' }}>💬 Enviar Feedback Pedagógico ao Estudante</h4>
+                        <form onSubmit={handleAddPedagogicalFeedback}>
+                          <div className="form-group">
+                            <label className="form-label">Título / Resumo *</label>
+                            <input
+                              className="form-input"
+                              placeholder="Ex: Ótimo avanço na resolução de algoritmos"
+                              value={feedbackForm.title}
+                              onChange={e => setFeedbackForm(f => ({ ...f, title: e.target.value }))}
+                              id="student-feedback-title-input"
+                            />
+                          </div>
+                          <div className="grid-2">
+                            <div className="form-group">
+                              <label className="form-label">Categoria</label>
+                              <select
+                                className="form-select"
+                                value={feedbackForm.category}
+                                onChange={e => setFeedbackForm(f => ({ ...f, category: e.target.value }))}
+                              >
+                                {FEEDBACK_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                              </select>
+                            </div>
+                            <div className="form-group">
+                              <label className="form-label">Disciplina</label>
+                              <select
+                                className="form-select"
+                                value={feedbackForm.subject}
+                                onChange={e => setFeedbackForm(f => ({ ...f, subject: e.target.value }))}
+                              >
+                                <option value="Geral">Geral / Acompanhamento</option>
+                                {SUBJECT_GROUPS.map(grp => (
+                                  <optgroup key={grp.id} label={grp.shortLabel}>
+                                    {grp.subjects.map(s => <option key={s} value={s}>{s}</option>)}
+                                  </optgroup>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+                          <div className="form-group">
+                            <label className="form-label">Mensagem de Feedback *</label>
+                            <textarea
+                              className="form-textarea"
+                              rows={3}
+                              placeholder="Escreva orientações ou incentivo pedagógico visível na área do estudante..."
+                              value={feedbackForm.message}
+                              onChange={e => setFeedbackForm(f => ({ ...f, message: e.target.value }))}
+                              id="student-feedback-message-input"
+                            />
+                          </div>
+                          <button
+                            type="submit"
+                            className="btn btn-primary"
+                            disabled={submittingStudentAction}
+                            id="submit-student-feedback-btn"
+                          >
+                            <Plus size={15} /> Publicar Feedback
+                          </button>
+                        </form>
+                      </div>
+
+                      <div>
+                        <h4 style={{ margin: '0 0 12px' }}>
+                          Feedbacks Enviados ({studentProfileData.pedagogicalFeedbacks.length})
+                        </h4>
+                        {studentProfileData.pedagogicalFeedbacks.length === 0 ? (
+                          <p style={{ fontSize: '0.86rem', color: 'var(--color-text-muted)' }}>
+                            Nenhum feedback pedagógico enviado para este estudante ainda.
+                          </p>
+                        ) : (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                            {studentProfileData.pedagogicalFeedbacks.map(fb => (
+                              <div
+                                key={fb.id}
+                                style={{
+                                  padding: '12px 14px',
+                                  borderRadius: 10,
+                                  border: '1px solid var(--color-border)',
+                                  background: 'var(--color-bg-subtle)',
+                                }}
+                              >
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                                  <div>
+                                    <div style={{ fontWeight: 700, fontSize: '0.92rem' }}>{fb.title || 'Feedback pedagógico'}</div>
+                                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
+                                      {fb.category && <span className="chip">{fb.category}</span>}
+                                      <span className="chip">{fb.subject}</span>
+                                    </div>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    className="btn btn-ghost btn-sm"
+                                    onClick={() => handleDeletePedagogicalFeedback(fb.id)}
+                                    style={{ color: 'var(--color-danger)' }}
+                                  >
+                                    <Trash2 size={14} />
+                                  </button>
+                                </div>
+                                <p style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)', margin: '8px 0 0', whiteSpace: 'pre-wrap' }}>
+                                  {fb.comment}
+                                </p>
+                                <div style={{ fontSize: '0.74rem', color: 'var(--color-text-muted)', marginTop: 6 }}>
+                                  Por {fb.authorName} em {fb.createdAt ? new Date(fb.createdAt).toLocaleDateString('pt-BR') : ''}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ── SUB-ABA 5: OBSERVAÇÕES PEDAGÓGICAS INTERNAS (RESTRITO À EQUIPE) ── */}
+                  {studentProfileTab === 'observacoes_internas' && (
+                    <div>
+                      <div style={{
+                        padding: '10px 14px',
+                        borderRadius: 10,
+                        background: 'rgba(245, 158, 11, 0.12)',
+                        border: '1px solid rgba(245, 158, 11, 0.35)',
+                        fontSize: '0.82rem',
+                        color: 'var(--color-text)',
+                        marginBottom: 16,
+                      }}>
+                        🔒 <strong>Registro Interno Docente & AEE:</strong> As anotações registradas nesta aba são exclusivas para acompanhamento pedagógico entre professores autorizados e coordenação, não ficando visíveis para o estudante.
+                      </div>
+
+                      <div className="grid-2" style={{ gap: 20, alignItems: 'start' }}>
+                        <div style={{ padding: 16, borderRadius: 12, border: '1px solid var(--color-border)', background: 'var(--color-bg-subtle)' }}>
+                          <h4 style={{ margin: '0 0 12px' }}>🔒 Nova Observação Pedagógica Interna</h4>
+                          <form onSubmit={handleAddStudentInternalNote}>
+                            <div className="form-group">
+                              <label className="form-label">Categoria</label>
+                              <select
+                                className="form-select"
+                                value={internalNoteForm.category}
+                                onChange={e => setInternalNoteForm(f => ({ ...f, category: e.target.value }))}
+                              >
+                                {INTERNAL_NOTE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                              </select>
+                            </div>
+                            <div className="form-group">
+                              <label className="form-label">Anotação Pedagógica Interna *</label>
+                              <textarea
+                                className="form-textarea"
+                                rows={4}
+                                placeholder="Registre observações de acompanhamento, adaptações AEE ou alinhamentos da equipe docente..."
+                                value={internalNoteForm.note}
+                                onChange={e => setInternalNoteForm(f => ({ ...f, note: e.target.value }))}
+                                id="student-internal-note-input"
+                              />
+                            </div>
+                            <button
+                              type="submit"
+                              className="btn btn-primary"
+                              disabled={submittingStudentAction}
+                              id="submit-student-internal-note-btn"
+                            >
+                              <Lock size={14} /> Salvar Observação Interna
+                            </button>
+                          </form>
+                        </div>
+
+                        <div>
+                          <h4 style={{ margin: '0 0 12px' }}>
+                            Observações Internas Registradas ({studentProfileData.internalNotes.length})
+                          </h4>
+                          {studentProfileData.internalNotes.length === 0 ? (
+                            <p style={{ fontSize: '0.86rem', color: 'var(--color-text-muted)' }}>
+                              Nenhuma observação pedagógica interna registrada para este estudante.
+                            </p>
+                          ) : (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                              {studentProfileData.internalNotes.map(nt => (
+                                <div
+                                  key={nt.id}
+                                  style={{
+                                    padding: '12px 14px',
+                                    borderRadius: 10,
+                                    border: '1px solid var(--color-border)',
+                                    background: 'var(--color-bg-subtle)',
+                                  }}
+                                >
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                                    <span className="chip">{nt.category}</span>
+                                    <button
+                                      type="button"
+                                      className="btn btn-ghost btn-sm"
+                                      onClick={() => handleDeleteStudentInternalNote(nt.id)}
+                                      style={{ color: 'var(--color-danger)' }}
+                                    >
+                                      <Trash2 size={14} />
+                                    </button>
+                                  </div>
+                                  <p style={{ fontSize: '0.85rem', color: 'var(--color-text)', margin: '8px 0 0', whiteSpace: 'pre-wrap' }}>
+                                    {nt.observation}
+                                  </p>
+                                  <div style={{ fontSize: '0.74rem', color: 'var(--color-text-muted)', marginTop: 6 }}>
+                                    Por {nt.authorName} ({nt.authorRole}) em {nt.createdAt ? new Date(nt.createdAt).toLocaleString('pt-BR') : ''}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════════════════════════════════
+          MODAL: BUSCAR E ADICIONAR ESTUDANTES À TURMA
          ═══════════════════════════════════════════════════════════════════ */}
       {isAddStudentModalOpen && selectedClass && (
         <div
@@ -1857,7 +3083,7 @@ export default function TeacherDashboard() {
                 marginBottom: 14,
               }}
             >
-              🔒 <strong>Privacidade & Proteção AEE:</strong> A pesquisa é executada no servidor via Firebase Admin SDK e retorna exclusivamente contas com perfil de estudante (exibindo apenas <strong>nome</strong> e <strong>e-mail</strong> de identificação). Preferências de acessibilidade e registros acadêmicos só ficam acessíveis após o vínculo com a turma.
+              🔒 <strong>Privacidade & Proteção AEE:</strong> A pesquisa exibe exclusivamente contas de estudantes com <strong>nome</strong> e <strong>e-mail</strong> para identificação. Informações acadêmicas detalhadas só ficam acessíveis após a matrícula na turma.
             </div>
 
             {/* Campo de busca por nome ou e-mail */}
@@ -1913,7 +3139,7 @@ export default function TeacherDashboard() {
             >
               {searchingStudents ? (
                 <div style={{ padding: 28, textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '0.88rem' }}>
-                  Consultando contas de estudantes no servidor seguro...
+                  Consultando contas de estudantes cadastrados...
                 </div>
               ) : searchedStudents.length === 0 ? (
                 <div style={{ padding: 28, textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '0.86rem' }}>

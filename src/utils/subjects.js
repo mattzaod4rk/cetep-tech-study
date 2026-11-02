@@ -2,7 +2,29 @@
  * Matriz Curricular Oficial — CETEP Recôncavo II Alberto Torres (Cruz das Almas - BA)
  * Baseada na LDB (Art. 35 / BNCC Ensino Médio) e no Catálogo SUPROT / SEC-BA
  * para o Curso Técnico em Informática (Eixo Informação e Comunicação).
+ *
+ * Organização unificada das 8 áreas dos Cadernos de Estudo, Planejamento Semanal,
+ * Publicação de Conteúdos, Atividades e Filtros:
+ * 1. Matemática
+ * 2. Informática
+ * 3. Física
+ * 4. História
+ * 5. Geografia
+ * 6. Filosofia e Sociologia (antiga categoria Humanas, com retrocompatibilidade)
+ * 7. Linguagens
+ * 8. Química e Biologia
  */
+
+export const STUDY_CATEGORIES = [
+  { id: 'matematica', label: 'Matemática' },
+  { id: 'informatica', label: 'Informática' },
+  { id: 'fisica', label: 'Física' },
+  { id: 'historia', label: 'História' },
+  { id: 'geografia', label: 'Geografia' },
+  { id: 'filosofia_sociologia', label: 'Filosofia e Sociologia' },
+  { id: 'linguagens', label: 'Linguagens' },
+  { id: 'natureza', label: 'Química e Biologia' },
+];
 
 export const SUBJECT_GROUPS = [
   {
@@ -11,14 +33,17 @@ export const SUBJECT_GROUPS = [
     shortLabel: 'Ensino Médio (LDB)',
     subjects: [
       'Matemática e suas Tecnologias',
-      'Português / Redação e Linguagens',
       'Física',
-      'Química',
-      'Biologia',
       'História',
       'Geografia',
       'Filosofia e Sociologia',
+      'Filosofia',
+      'Sociologia',
+      'Português / Redação e Linguagens',
       'Inglês Técnico / Língua Estrangeira',
+      'Química e Biologia',
+      'Química',
+      'Biologia',
     ],
   },
   {
@@ -26,6 +51,7 @@ export const SUBJECT_GROUPS = [
     label: 'Formação Técnica em Informática (SUPROT / SEC-BA)',
     shortLabel: 'Técnico em Informática (CETEP)',
     subjects: [
+      'Informática',
       'Lógica de Programação',
       'Fundamentos e Arquitetura de Computadores',
       'Manutenção de Computadores',
@@ -53,8 +79,22 @@ export const SUBJECT_GROUPS = [
 export const SUBJECTS = SUBJECT_GROUPS.flatMap((group) => group.subjects);
 
 /**
+ * Normaliza referências antigas (ex: 'Humanas' ou 'humanas') para a nova nomenclatura
+ * sem perder conteúdos ou classificações já salvas.
+ */
+export function normalizeLegacySubjectName(subject = '') {
+  const trimmed = String(subject || '').trim();
+  if (!trimmed) return 'Geral';
+  if (trimmed.toLowerCase() === 'humanas' || trimmed.toLowerCase() === 'ciências humanas') {
+    return 'Filosofia e Sociologia';
+  }
+  return trimmed;
+}
+
+/**
  * Sugestão padrão de Planejamento Semanal equilibrado para o estudante
  * do Técnico em Informática integrado ao Ensino Médio no CETEP Alberto Torres.
+ * Contempla a organização atualizada com História, Geografia e Filosofia e Sociologia.
  * (Chaves: 0 = Dom, 1 = Seg, 2 = Ter, 3 = Qua, 4 = Qui, 5 = Sex, 6 = Sáb)
  */
 export const DEFAULT_WEEKLY_PLAN = {
@@ -69,9 +109,9 @@ export const DEFAULT_WEEKLY_PLAN = {
     note: 'Sistema binário, hardware e leitura interpretativa',
   },
   3: {
-    subjects: ['Matemática e suas Tecnologias', 'Banco de Dados'],
+    subjects: ['História', 'Geografia', 'Banco de Dados'],
     goalMinutes: 30,
-    note: 'Equações, gráficos e modelagem de tabelas',
+    note: 'Contexto histórico, território e modelagem de dados',
   },
   4: {
     subjects: ['Redes de Computadores', 'Física'],
@@ -79,9 +119,9 @@ export const DEFAULT_WEEKLY_PLAN = {
     note: 'Taxa de transferência (Mbps/MBs) e grandezas físicas',
   },
   5: {
-    subjects: ['Desenvolvimento Web', 'História'],
+    subjects: ['Filosofia e Sociologia', 'Química e Biologia', 'Desenvolvimento Web'],
     goalMinutes: 25,
-    note: 'Proporções CSS/layout e revisão de humanas',
+    note: 'Ética, cidadania, sustentabilidade e layout web',
   },
   6: {
     subjects: ['Revisão / Nivelamento'],
@@ -96,32 +136,50 @@ export const DEFAULT_WEEKLY_PLAN = {
 };
 
 /**
- * Verifica se uma matéria tem trilha interativa direta na Área de Estudos (/math)
+ * Retorna o ID da aba correspondente nos Cadernos de Estudo (/math?tab=...)
+ * para qualquer disciplina da matriz curricular (incluindo retrocompatibilidade com 'humanas').
  */
 export function getStudyHubTabForSubject(subject = '') {
-  const s = subject.toLowerCase();
-  if (s.includes('matemática') || s.includes('revisão')) return 'matematica';
+  const s = String(subject || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+
+  if (s.includes('historia')) return 'historia';
+  if (s.includes('geografia')) return 'geografia';
+  if (s.includes('filosofia') || s.includes('sociologia') || s.includes('humanas')) {
+    return 'filosofia_sociologia';
+  }
+  if (s.includes('fisica')) return 'fisica';
+  if (s.includes('portugues') || s.includes('redacao') || s.includes('ingles') || s.includes('linguagens')) {
+    return 'linguagens';
+  }
+  if (s.includes('quimica') || s.includes('biologia') || s.includes('natureza')) {
+    return 'natureza';
+  }
   if (
-    s.includes('programação') ||
+    s.includes('programacao') ||
     s.includes('arquitetura') ||
-    s.includes('manutenção') ||
+    s.includes('manutencao') ||
     s.includes('redes') ||
     s.includes('banco de dados') ||
     s.includes('web') ||
     s.includes('sistemas') ||
-    s.includes('informática')
+    s.includes('informatica') ||
+    s.includes('seguranca') ||
+    s.includes('empreendedorismo') ||
+    s.includes('tcc')
   ) {
     return 'informatica';
   }
-  if (s.includes('física')) return 'fisica';
-  if (s.includes('história') || s.includes('geografia') || s.includes('filosofia') || s.includes('sociologia')) {
-    return 'humanas';
-  }
-  if (s.includes('português') || s.includes('redação') || s.includes('inglês')) {
-    return 'linguagens';
-  }
-  if (s.includes('química') || s.includes('biologia')) {
-    return 'natureza';
-  }
+  if (s.includes('matematica') || s.includes('revisao')) return 'matematica';
   return 'matematica';
+}
+
+/**
+ * Verifica se um conteúdo/atividade de determinada disciplina pertence a uma aba dos Cadernos de Estudo.
+ */
+export function doesSubjectMatchStudyTab(subject = '', tabId = '') {
+  const normalizedTab = tabId === 'humanas' ? 'filosofia_sociologia' : tabId;
+  return getStudyHubTabForSubject(subject) === normalizedTab;
 }

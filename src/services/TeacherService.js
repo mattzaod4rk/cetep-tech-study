@@ -18,6 +18,7 @@ import {
 } from 'firebase/firestore';
 import { auth, db } from './firebase.js';
 import { hashPassword } from './crypto.js';
+import { normalizeLegacySubjectName } from '../utils/subjects.js';
 import * as DataService from './DataService.js';
 
 const LOCAL_KEYS = {
@@ -28,6 +29,10 @@ const LOCAL_KEYS = {
   CLASS_AUDIT_LOGS: 'cetep_class_audit_logs',
   TEACHER_INVITES: 'cetep_teacher_invites',
   USERS: 'cetep_users',
+  INDIVIDUAL_ACTIVITIES: 'cetep_student_individual_activities',
+  ACADEMIC_RECORDS: 'cetep_student_academic_records',
+  PEDAGOGICAL_FEEDBACKS: 'cetep_student_pedagogical_feedbacks',
+  INTERNAL_NOTES: 'cetep_student_internal_notes',
 };
 
 function loadLocal(key, fallback) {
@@ -679,7 +684,7 @@ export async function createClassContent(actorUser, classObj, contentData) {
     id: generateId('cnt'),
     classId: classObj.id,
     title: String(contentData.title).trim().slice(0, 200),
-    subject: String(contentData.subject).trim().slice(0, 120),
+    subject: normalizeLegacySubjectName(contentData.subject).slice(0, 120),
     description: String(contentData.description || '').trim().slice(0, 2000),
     resourceUrl: String(contentData.resourceUrl || '').trim().slice(0, 500),
     authorId: String(actorUser.uid || actorUser.id).slice(0, 128),
@@ -739,7 +744,7 @@ export async function createClassActivity(actorUser, classObj, activityData) {
     id: generateId('act'),
     classId: classObj.id,
     title: String(activityData.title).trim().slice(0, 200),
-    subject: String(activityData.subject).trim().slice(0, 120),
+    subject: normalizeLegacySubjectName(activityData.subject).slice(0, 120),
     type: String(activityData.type || 'Atividade').trim().slice(0, 40),
     dueDate: String(activityData.dueDate || '').trim().slice(0, 30),
     points: Math.max(0, Math.min(100, Number(activityData.points) || 10)),
@@ -954,3 +959,662 @@ export async function revokeTeacherInviteByAdmin(adminUser, inviteId) {
   await deleteDoc(doc(db, 'teacherInvites', inviteId));
   return true;
 }
+
+// ─── 7. Consulta de Publicações e Resultados na Área do Estudante ────────────
+
+/**
+ * Retorna todas as turmas em que o estudante está matriculado (`uid in studentIds`)
+ * e consolida os conteúdos, atividades e comunicados publicados pelos professores
+ * daquelas turmas, além das atividades individuais, notas e feedbacks publicados
+ * para o próprio estudante.
+ *
+ * Isolamento garantido:
+ * - O aluno recebe EXCLUSIVAMENTE publicações das turmas nas quais está matriculado.
+ * - Observações internas de professores (`/studentInternalNotes`) NUNCA são consultadas
+ *   nem retornadas nesta função.
+ */
+export async function getStudentEnrolledClassesFeed(studentUser) {
+  if (!studentUser || !(studentUser.uid || studentUser.id)) {
+    return {
+      enrolledClasses: [],
+      contents: [],
+      activities: [],
+      announcements: [],
+      individualActivities: [],
+      academicRecords: [],
+      pedagogicalFeedbacks: [],
+    };
+  }
+  const studentUid = String(studentUser.uid || studentUser.id);
+
+  if (!db) {
+    const allClasses = loadLocal(LOCAL_KEYS.CLASSES, []);
+    const enrolledClasses = allClasses.filter(
+      c => Array.isArray(c.studentIds) && c.studentIds.includes(studentUid)
+    );
+
+    const allContentsMap = loadLocal(LOCAL_KEYS.CLASS_CONTENTS, {});
+    const allActivitiesMap = loadLocal(LOCAL_KEYS.CLASS_ACTIVITIES, {});
+    const allAnnouncementsMap = loadLocal(LOCAL_KEYS.CLASS_ANNOUNCEMENTS, {});
+
+    const contents = [];
+    const activities = [];
+    const announcements = [];
+
+    for (const cls of enrolledClasses) {
+      for (const cnt of allContentsMap[cls.id] || []) {
+        contents.push({
+          ...cnt,
+          subject: normalizeLegacySubjectName(cnt.subject),
+          classId: cls.id,
+          className: cls.name,
+        });
+      }
+      for (const act of allActivitiesMap[cls.id] || []) {
+        activities.push({
+          ...act,
+          subject: normalizeLegacySubjectName(act.subject),
+          classId: cls.id,
+          className: cls.name,
+        });
+      }
+      for (const ann of allAnnouncementsMap[cls.id] || []) {
+        announcements.push({
+          ...ann,
+          classId: cls.id,
+          className: cls.name,
+        });
+      }
+    }
+
+    const indActsMap = loadLocal(LOCAL_KEYS.INDIVIDUAL_ACTIVITIES, {});
+    const gradesMap = loadLocal(LOCAL_KEYS.ACADEMIC_RECORDS, {});
+    const feedbacksMap = loadLocal(LOCAL_KEYS.PEDAGOGICAL_FEEDBACKS, {});
+
+    return {
+      enrolledClasses,
+      contents: contents.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || '')),
+      activities: activities.sort((a, b) => (a.dueDate || '').localeCompare(b.dueDate || '')),
+      announcements: announcements.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || '')),
+      individualActivities: (indActsMap[studentUid] || []).map(x => ({
+        ...x,
+        subject: normalizeLegacySubjectName(x.subject),
+      })),
+      academicRecords: (gradesMap[studentUid] || []).map(x => ({
+        ...x,
+        subject: normalizeLegacySubjectName(x.subject),
+      })),
+      pedagogicalFeedbacks: feedbacksMap[studentUid] || [],
+    };
+  }
+
+  // Consulta no Cloud Firestore: turmas onde o estudante está matriculado
+  const classesCol = collection(db, 'classes');
+  const qEnrolled = query(classesCol, where('studentIds', 'array-contains', studentUid));
+  const enrolledSnap = await getDocs(qEnrolled);
+  const enrolledClasses = enrolledSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+  const contents = [];
+  const activities = [];
+  const announcements = [];
+
+  await Promise.all(
+    enrolledClasses.map(async cls => {
+      const [cntSnap, actSnap, annSnap] = await Promise.all([
+        getDocs(collection(db, 'classes', cls.id, 'contents')),
+        getDocs(collection(db, 'classes', cls.id, 'activities')),
+        getDocs(collection(db, 'classes', cls.id, 'announcements')),
+      ]);
+
+      for (const d of cntSnap.docs) {
+        const data = d.data();
+        contents.push({
+          id: d.id,
+          ...data,
+          subject: normalizeLegacySubjectName(data.subject),
+          classId: cls.id,
+          className: cls.name,
+        });
+      }
+      for (const d of actSnap.docs) {
+        const data = d.data();
+        activities.push({
+          id: d.id,
+          ...data,
+          subject: normalizeLegacySubjectName(data.subject),
+          classId: cls.id,
+          className: cls.name,
+        });
+      }
+      for (const d of annSnap.docs) {
+        const data = d.data();
+        announcements.push({
+          id: d.id,
+          ...data,
+          classId: cls.id,
+          className: cls.name,
+        });
+      }
+    })
+  );
+
+  const [indSnap, gradesSnap, fbSnap] = await Promise.all([
+    getDocs(collection(db, 'users', studentUid, 'individualActivities')).catch(() => ({ docs: [] })),
+    getDocs(collection(db, 'users', studentUid, 'academicRecords')).catch(() => ({ docs: [] })),
+    getDocs(collection(db, 'users', studentUid, 'pedagogicalFeedbacks')).catch(() => ({ docs: [] })),
+  ]);
+
+  const individualActivities = indSnap.docs
+    .map(d => ({ id: d.id, ...d.data(), subject: normalizeLegacySubjectName(d.data().subject) }))
+    .sort((a, b) => (a.dueDate || '').localeCompare(b.dueDate || ''));
+
+  const academicRecords = gradesSnap.docs
+    .map(d => ({ id: d.id, ...d.data(), subject: normalizeLegacySubjectName(d.data().subject) }))
+    .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+
+  const pedagogicalFeedbacks = fbSnap.docs
+    .map(d => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+
+  return {
+    enrolledClasses,
+    contents: contents.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || '')),
+    activities: activities.sort((a, b) => (a.dueDate || '').localeCompare(b.dueDate || '')),
+    announcements: announcements.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || '')),
+    individualActivities,
+    academicRecords,
+    pedagogicalFeedbacks,
+  };
+}
+
+/**
+ * Permite que o próprio estudante marque como concluída (ou reabra) uma atividade individual
+ * atribuída a ele, sem poder alterar título, pontuação, prazo ou autoria.
+ */
+export async function toggleStudentIndividualActivityStatus(studentUser, activityId) {
+  if (!studentUser || !(studentUser.uid || studentUser.id)) {
+    throw new Error('Não autenticado.');
+  }
+  const studentUid = String(studentUser.uid || studentUser.id);
+  const nowISO = new Date().toISOString();
+
+  if (!db) {
+    const all = loadLocal(LOCAL_KEYS.INDIVIDUAL_ACTIVITIES, {});
+    const list = all[studentUid] || [];
+    const idx = list.findIndex(a => a.id === activityId);
+    if (idx === -1) throw new Error('Atividade individual não encontrada.');
+    const nextStatus = list[idx].status === 'completed' ? 'pending' : 'completed';
+    list[idx] = {
+      ...list[idx],
+      status: nextStatus,
+      completedAt: nextStatus === 'completed' ? nowISO : null,
+      updatedAt: nowISO,
+    };
+    all[studentUid] = list;
+    saveLocal(LOCAL_KEYS.INDIVIDUAL_ACTIVITIES, all);
+    return list[idx];
+  }
+
+  const ref = doc(db, 'users', studentUid, 'individualActivities', activityId);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) throw new Error('Atividade individual não encontrada.');
+  const existing = snap.data();
+  const nextStatus = existing.status === 'completed' ? 'pending' : 'completed';
+  const updated = {
+    ...existing,
+    status: nextStatus,
+    completedAt: nextStatus === 'completed' ? nowISO : null,
+    updatedAt: nowISO,
+  };
+  await setDoc(ref, updated);
+  return updated;
+}
+
+// ─── 8. Perfil Acadêmico Individual do Estudante & Ferramentas Pedagógicas ───
+
+/**
+ * Verifica se o docente (`actorUser`) possui permissão para consultar/gerenciar
+ * o perfil acadêmico de `studentUid`.
+ * - Administrador (`role === 'admin'`): acesso a todos os estudantes.
+ * - Professor (`role === 'professor'`): acesso SOMENTE a estudantes matriculados
+ *   em pelo menos uma turma autorizada ao professor (`actorUid in class.teacherIds && studentUid in class.studentIds`).
+ * - Aluno (`role === 'aluno'`): negado.
+ */
+async function assertCanAccessStudentProfile(actorUser, studentUid, explicitClassId = null) {
+  assertStaff(actorUser);
+  const actorUid = String(actorUser.uid || actorUser.id);
+  const targetUid = String(studentUid || '').trim();
+  if (!targetUid) {
+    throw new Error('Identificador do estudante é obrigatório.');
+  }
+
+  const authorizedClasses = await getAuthorizedClasses(actorUser);
+
+  if (actorUser.role === 'admin') {
+    const studentClasses = authorizedClasses.filter(
+      c => Array.isArray(c.studentIds) && c.studentIds.includes(targetUid)
+    );
+    const chosenClass = explicitClassId
+      ? authorizedClasses.find(c => c.id === explicitClassId) || studentClasses[0] || authorizedClasses[0] || null
+      : studentClasses[0] || authorizedClasses[0] || null;
+    return { studentClasses, chosenClass };
+  }
+
+  // Professor: só pode acessar se o aluno pertencer a uma turma atribuída a este professor
+  const sharedClasses = authorizedClasses.filter(
+    c =>
+      Array.isArray(c.teacherIds) &&
+      c.teacherIds.includes(actorUid) &&
+      Array.isArray(c.studentIds) &&
+      c.studentIds.includes(targetUid)
+  );
+
+  if (sharedClasses.length === 0) {
+    throw new Error(
+      'Acesso negado: você só pode acessar perfis e registros de estudantes matriculados nas suas turmas atribuídas.'
+    );
+  }
+
+  if (explicitClassId && !sharedClasses.some(c => c.id === explicitClassId)) {
+    throw new Error('Acesso negado: este estudante não pertence à turma informada ou você não é docente dela.');
+  }
+
+  const chosenClass = explicitClassId
+    ? sharedClasses.find(c => c.id === explicitClassId)
+    : sharedClasses[0];
+
+  return { studentClasses: sharedClasses, chosenClass };
+}
+
+/**
+ * Carrega o Perfil Acadêmico Individual completo de um estudante para o Professor autorizado ou Administrador.
+ * Não inventa notas, atividades ou registros: começa com estados vazios quando não há dados cadastrados.
+ */
+export async function getStudentAcademicProfile(actorUser, studentUid, explicitClassId = null) {
+  const { studentClasses, chosenClass } = await assertCanAccessStudentProfile(
+    actorUser,
+    studentUid,
+    explicitClassId
+  );
+  const targetUid = String(studentUid);
+
+  const linkedSubjects = Array.from(
+    new Set(
+      studentClasses.flatMap(c => (Array.isArray(c.subjects) ? c.subjects.map(normalizeLegacySubjectName) : []))
+    )
+  );
+
+  if (!db) {
+    const allUsers = loadLocal(LOCAL_KEYS.USERS, []);
+    const u = allUsers.find(x => (x.uid || x.id) === targetUid);
+    if (!u) throw new Error('Estudante não encontrado.');
+
+    const tasks = DataService.getTasks(targetUid);
+    const focusSessions = DataService.getFocusSessions(targetUid);
+    const gamification = DataService.getGamification(targetUid);
+
+    const allContentsMap = loadLocal(LOCAL_KEYS.CLASS_CONTENTS, {});
+    const allActivitiesMap = loadLocal(LOCAL_KEYS.CLASS_ACTIVITIES, {});
+
+    const classContents = studentClasses.flatMap(c =>
+      (allContentsMap[c.id] || []).map(cnt => ({ ...cnt, className: c.name }))
+    );
+    const classActivities = studentClasses.flatMap(c =>
+      (allActivitiesMap[c.id] || []).map(act => ({ ...act, className: c.name }))
+    );
+
+    const indActsMap = loadLocal(LOCAL_KEYS.INDIVIDUAL_ACTIVITIES, {});
+    const gradesMap = loadLocal(LOCAL_KEYS.ACADEMIC_RECORDS, {});
+    const feedbacksMap = loadLocal(LOCAL_KEYS.PEDAGOGICAL_FEEDBACKS, {});
+    const notesMap = loadLocal(LOCAL_KEYS.INTERNAL_NOTES, {});
+
+    return {
+      student: {
+        uid: targetUid,
+        name: u.name || 'Estudante',
+        email: u.email || '',
+        createdAt: u.createdAt || null,
+      },
+      enrolledClasses: studentClasses,
+      activeClass: chosenClass,
+      linkedSubjects,
+      tasksCompleted: tasks.filter(t => t.status === 'completed'),
+      tasksPending: tasks.filter(t => t.status !== 'completed'),
+      focusSessions: [...focusSessions].sort((a, b) =>
+        (b.completedAt || b.createdAt || '').localeCompare(a.completedAt || a.createdAt || '')
+      ),
+      gamification: {
+        points: gamification.points || 0,
+        level: gamification.level || 1,
+        streakDays: gamification.streakDays || 0,
+        bestStreak: gamification.bestStreak || 0,
+        lastActiveDate: gamification.lastActiveDate || null,
+      },
+      classContents,
+      classActivities,
+      individualActivities: indActsMap[targetUid] || [],
+      academicRecords: gradesMap[targetUid] || [],
+      pedagogicalFeedbacks: feedbacksMap[targetUid] || [],
+      internalNotes: notesMap[targetUid] || [],
+    };
+  }
+
+  // Professores só leem registros vinculados às suas próprias turmas (compatível com as Security Rules);
+  // administradores leem todos os registros.
+  const scopedClassIds = studentClasses.map(c => c.id).slice(0, 30);
+  const scoped = colRef =>
+    actorUser.role === 'admin' || scopedClassIds.length === 0
+      ? colRef
+      : query(colRef, where('classId', 'in', scopedClassIds));
+
+  const userSnap = await getDoc(doc(db, 'users', targetUid));
+  if (!userSnap.exists()) throw new Error('Estudante não encontrado.');
+  const u = userSnap.data();
+
+  const [
+    tasksSnap,
+    focusSnap,
+    gamificationSnap,
+    indSnap,
+    gradesSnap,
+    fbSnap,
+    notesSnap,
+  ] = await Promise.all([
+    getDocs(collection(db, 'users', targetUid, 'tasks')),
+    getDocs(collection(db, 'users', targetUid, 'focusSessions')),
+    getDoc(doc(db, 'users', targetUid, 'appdata', 'gamification')),
+    getDocs(scoped(collection(db, 'users', targetUid, 'individualActivities'))),
+    getDocs(scoped(collection(db, 'users', targetUid, 'academicRecords'))),
+    getDocs(scoped(collection(db, 'users', targetUid, 'pedagogicalFeedbacks'))),
+    getDocs(scoped(collection(db, 'studentInternalNotes', targetUid, 'notes'))),
+  ]);
+
+  const classContents = [];
+  const classActivities = [];
+  await Promise.all(
+    studentClasses.map(async cls => {
+      const [cntSnap, actSnap] = await Promise.all([
+        getDocs(collection(db, 'classes', cls.id, 'contents')),
+        getDocs(collection(db, 'classes', cls.id, 'activities')),
+      ]);
+      for (const d of cntSnap.docs) {
+        classContents.push({ id: d.id, ...d.data(), className: cls.name });
+      }
+      for (const d of actSnap.docs) {
+        classActivities.push({ id: d.id, ...d.data(), className: cls.name });
+      }
+    })
+  );
+
+  const tasks = tasksSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const focusSessions = focusSnap.docs
+    .map(d => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => (b.completedAt || b.createdAt || '').localeCompare(a.completedAt || a.createdAt || ''));
+  const gamification = gamificationSnap.exists() ? gamificationSnap.data() : {};
+
+  return {
+    student: {
+      uid: targetUid,
+      name: u.name || 'Estudante',
+      email: u.email || '',
+      createdAt: u.createdAt || null,
+    },
+    enrolledClasses: studentClasses,
+    activeClass: chosenClass,
+    linkedSubjects,
+    tasksCompleted: tasks.filter(t => t.status === 'completed'),
+    tasksPending: tasks.filter(t => t.status !== 'completed'),
+    focusSessions,
+    gamification: {
+      points: Number(gamification.points) || 0,
+      level: Number(gamification.level) || 1,
+      streakDays: Number(gamification.streakDays) || 0,
+      bestStreak: Number(gamification.bestStreak) || 0,
+      lastActiveDate: gamification.lastActiveDate || null,
+    },
+    classContents,
+    classActivities,
+    individualActivities: indSnap.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || '')),
+    academicRecords: gradesSnap.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || '')),
+    pedagogicalFeedbacks: fbSnap.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || '')),
+    internalNotes: notesSnap.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || '')),
+  };
+}
+
+/**
+ * Atribui uma atividade pedagógica individual para um estudante específico.
+ */
+export async function assignIndividualActivity(actorUser, {
+  studentUid,
+  classId,
+  title,
+  subject,
+  dueDate = '',
+  points = 10,
+  description = '',
+}) {
+  const { chosenClass } = await assertCanAccessStudentProfile(actorUser, studentUid, classId);
+  if (!title?.trim()) throw new Error('Informe o título da atividade individual.');
+  if (!subject?.trim()) throw new Error('Selecione a disciplina da atividade.');
+
+  const resolvedClassId = String(classId || chosenClass?.id || 'geral').slice(0, 128);
+  const nowISO = new Date().toISOString();
+  const item = {
+    id: generateId('ind-act'),
+    studentUid: String(studentUid),
+    classId: resolvedClassId,
+    className: String(chosenClass?.name || ''),
+    title: String(title).trim().slice(0, 200),
+    subject: normalizeLegacySubjectName(subject).slice(0, 120),
+    dueDate: String(dueDate || '').trim().slice(0, 40),
+    points: Math.max(0, Math.min(100, Number(points) || 10)),
+    description: String(description || '').trim().slice(0, 2000),
+    status: 'pending',
+    authorId: String(actorUser.uid || actorUser.id).slice(0, 128),
+    authorName: String(actorUser.name || 'Professor').slice(0, 120),
+    createdAt: nowISO,
+    updatedAt: nowISO,
+  };
+
+  if (!db) {
+    const all = loadLocal(LOCAL_KEYS.INDIVIDUAL_ACTIVITIES, {});
+    all[studentUid] = [item, ...(all[studentUid] || [])];
+    saveLocal(LOCAL_KEYS.INDIVIDUAL_ACTIVITIES, all);
+    return item;
+  }
+
+  await setDoc(doc(db, 'users', String(studentUid), 'individualActivities', item.id), item);
+  return item;
+}
+
+export async function deleteIndividualActivity(actorUser, { studentUid, classId, activityId }) {
+  await assertCanAccessStudentProfile(actorUser, studentUid, classId);
+  if (!db) {
+    const all = loadLocal(LOCAL_KEYS.INDIVIDUAL_ACTIVITIES, {});
+    all[studentUid] = (all[studentUid] || []).filter(x => x.id !== activityId);
+    saveLocal(LOCAL_KEYS.INDIVIDUAL_ACTIVITIES, all);
+    return true;
+  }
+  await deleteDoc(doc(db, 'users', String(studentUid), 'individualActivities', activityId));
+  return true;
+}
+
+/**
+ * Registra nota / resultado de avaliação no perfil do estudante.
+ * O estudante pode consultar suas próprias notas publicadas, mas NUNCA alterá-las.
+ */
+export async function recordStudentGrade(actorUser, {
+  studentUid,
+  classId,
+  title,
+  subject,
+  unit = 'I Unidade',
+  score,
+  maxScore = 10,
+  notes = '',
+}) {
+  const { chosenClass } = await assertCanAccessStudentProfile(actorUser, studentUid, classId);
+  if (!title?.trim()) throw new Error('Informe a avaliação (ex: Prova I Unidade, Projeto SQL).');
+  if (!subject?.trim()) throw new Error('Selecione a disciplina.');
+  const numScore = Number(score);
+  const numMax = Number(maxScore) || 10;
+  if (Number.isNaN(numScore) || numScore < 0 || numScore > numMax) {
+    throw new Error(`A nota deve ser um número válido entre 0 e ${numMax}.`);
+  }
+
+  const resolvedClassId = String(classId || chosenClass?.id || 'geral').slice(0, 128);
+  const nowISO = new Date().toISOString();
+  const item = {
+    id: generateId('grade'),
+    studentUid: String(studentUid),
+    classId: resolvedClassId,
+    className: String(chosenClass?.name || ''),
+    title: String(title).trim().slice(0, 200),
+    subject: normalizeLegacySubjectName(subject).slice(0, 120),
+    unit: String(unit || 'I Unidade').trim().slice(0, 40),
+    score: numScore,
+    maxScore: numMax,
+    notes: String(notes || '').trim().slice(0, 1000),
+    authorId: String(actorUser.uid || actorUser.id).slice(0, 128),
+    authorName: String(actorUser.name || 'Professor').slice(0, 120),
+    createdAt: nowISO,
+    updatedAt: nowISO,
+  };
+
+  if (!db) {
+    const all = loadLocal(LOCAL_KEYS.ACADEMIC_RECORDS, {});
+    all[studentUid] = [item, ...(all[studentUid] || [])];
+    saveLocal(LOCAL_KEYS.ACADEMIC_RECORDS, all);
+    return item;
+  }
+
+  await setDoc(doc(db, 'users', String(studentUid), 'academicRecords', item.id), item);
+  return item;
+}
+
+export async function deleteStudentGrade(actorUser, { studentUid, classId, recordId }) {
+  await assertCanAccessStudentProfile(actorUser, studentUid, classId);
+  if (!db) {
+    const all = loadLocal(LOCAL_KEYS.ACADEMIC_RECORDS, {});
+    all[studentUid] = (all[studentUid] || []).filter(x => x.id !== recordId);
+    saveLocal(LOCAL_KEYS.ACADEMIC_RECORDS, all);
+    return true;
+  }
+  await deleteDoc(doc(db, 'users', String(studentUid), 'academicRecords', recordId));
+  return true;
+}
+
+/**
+ * Adiciona um feedback / orientação pedagógica visível ao estudante.
+ */
+export async function addPedagogicalFeedback(actorUser, {
+  studentUid,
+  classId,
+  subject = 'Geral',
+  comment,
+  title = '',
+  category = '',
+}) {
+  const { chosenClass } = await assertCanAccessStudentProfile(actorUser, studentUid, classId);
+  if (!comment?.trim()) throw new Error('Escreva o feedback pedagógico para o estudante.');
+
+  const resolvedClassId = String(classId || chosenClass?.id || 'geral').slice(0, 128);
+  const nowISO = new Date().toISOString();
+  const item = {
+    id: generateId('fb'),
+    studentUid: String(studentUid),
+    classId: resolvedClassId,
+    className: String(chosenClass?.name || ''),
+    subject: normalizeLegacySubjectName(subject).slice(0, 120),
+    title: String(title || '').trim().slice(0, 200),
+    category: String(category || '').trim().slice(0, 80),
+    comment: String(comment).trim().slice(0, 3000),
+    authorId: String(actorUser.uid || actorUser.id).slice(0, 128),
+    authorName: String(actorUser.name || 'Professor').slice(0, 120),
+    createdAt: nowISO,
+    updatedAt: nowISO,
+  };
+
+  if (!db) {
+    const all = loadLocal(LOCAL_KEYS.PEDAGOGICAL_FEEDBACKS, {});
+    all[studentUid] = [item, ...(all[studentUid] || [])];
+    saveLocal(LOCAL_KEYS.PEDAGOGICAL_FEEDBACKS, all);
+    return item;
+  }
+
+  await setDoc(doc(db, 'users', String(studentUid), 'pedagogicalFeedbacks', item.id), item);
+  return item;
+}
+
+export async function deletePedagogicalFeedback(actorUser, { studentUid, classId, feedbackId }) {
+  await assertCanAccessStudentProfile(actorUser, studentUid, classId);
+  if (!db) {
+    const all = loadLocal(LOCAL_KEYS.PEDAGOGICAL_FEEDBACKS, {});
+    all[studentUid] = (all[studentUid] || []).filter(x => x.id !== feedbackId);
+    saveLocal(LOCAL_KEYS.PEDAGOGICAL_FEEDBACKS, all);
+    return true;
+  }
+  await deleteDoc(doc(db, 'users', String(studentUid), 'pedagogicalFeedbacks', feedbackId));
+  return true;
+}
+
+/**
+ * Registra uma observação pedagógica INTERNA sobre o acompanhamento do estudante.
+ * Gravada em `/studentInternalNotes/{studentUid}/notes/{noteId}` — protegida no Firebase
+ * para que o estudante NUNCA tenha permissão de leitura ou escrita.
+ */
+export async function addStudentInternalNote(actorUser, {
+  studentUid,
+  classId,
+  category = 'Acompanhamento Pedagógico',
+  observation,
+}) {
+  const { chosenClass } = await assertCanAccessStudentProfile(actorUser, studentUid, classId);
+  if (!observation?.trim()) throw new Error('Escreva a observação pedagógica interna.');
+
+  const resolvedClassId = String(classId || chosenClass?.id || 'geral').slice(0, 128);
+  const nowISO = new Date().toISOString();
+  const item = {
+    id: generateId('note'),
+    studentUid: String(studentUid),
+    classId: resolvedClassId,
+    className: String(chosenClass?.name || ''),
+    category: String(category || 'Acompanhamento Pedagógico').trim().slice(0, 80),
+    observation: String(observation).trim().slice(0, 3000),
+    authorId: String(actorUser.uid || actorUser.id).slice(0, 128),
+    authorName: String(actorUser.name || 'Professor').slice(0, 120),
+    createdAt: nowISO,
+    updatedAt: nowISO,
+  };
+
+  if (!db) {
+    const all = loadLocal(LOCAL_KEYS.INTERNAL_NOTES, {});
+    all[studentUid] = [item, ...(all[studentUid] || [])];
+    saveLocal(LOCAL_KEYS.INTERNAL_NOTES, all);
+    return item;
+  }
+
+  await setDoc(doc(db, 'studentInternalNotes', String(studentUid), 'notes', item.id), item);
+  return item;
+}
+
+export async function deleteStudentInternalNote(actorUser, { studentUid, classId, noteId }) {
+  await assertCanAccessStudentProfile(actorUser, studentUid, classId);
+  if (!db) {
+    const all = loadLocal(LOCAL_KEYS.INTERNAL_NOTES, {});
+    all[studentUid] = (all[studentUid] || []).filter(x => x.id !== noteId);
+    saveLocal(LOCAL_KEYS.INTERNAL_NOTES, all);
+    return true;
+  }
+  await deleteDoc(doc(db, 'studentInternalNotes', String(studentUid), 'notes', noteId));
+  return true;
+}
+

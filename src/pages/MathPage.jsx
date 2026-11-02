@@ -18,7 +18,9 @@ import {
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { useApp } from '../contexts/AppContext.jsx';
 import * as DataService from '../services/DataService.js';
-import { STUDY_SUBJECT_TABS } from '../data/cetepStudyCatalog.js';
+import * as TeacherService from '../services/TeacherService.js';
+import { STUDY_SUBJECT_TABS, resolveStudySubjectTab } from '../data/cetepStudyCatalog.js';
+import { doesSubjectMatchStudyTab } from '../utils/subjects.js';
 import toast from 'react-hot-toast';
 
 const CUSTOM_VIDEOS_KEY = 'cetep_custom_videos';
@@ -55,32 +57,63 @@ export default function MathPage() {
   const navigate = useNavigate();
 
   const initialTab = searchParams.get('tab') || 'matematica';
-  const [activeSubjectId, setActiveSubjectId] = useState(
-    STUDY_SUBJECT_TABS.some(t => t.id === initialTab) ? initialTab : 'matematica'
-  );
+  const resolvedInitial = resolveStudySubjectTab ? resolveStudySubjectTab(initialTab) : (STUDY_SUBJECT_TABS.find(t => t.id === initialTab) || STUDY_SUBJECT_TABS[0]);
+  const [activeSubjectId, setActiveSubjectId] = useState(resolvedInitial.id);
 
   const activeSubject = STUDY_SUBJECT_TABS.find(t => t.id === activeSubjectId) || STUDY_SUBJECT_TABS[0];
 
   // Seção ativa na coluna principal:
-  // 'lab' (ferramenta interativa) | 'passos' (aulas em passos) | 'exercicios' | 'videos'
+  // 'lab' (ferramenta interativa) | 'passos' (aulas em passos) | 'exercicios' | 'videos' | 'turma' (conteúdos publicados pelo professor)
   const [subTab, setSubTab] = useState(() => (activeSubject.hasInteractiveLab ? 'lab' : 'passos'));
   const [mathTool, setMathTool] = useState('fracoes');
   const [infoTool, setInfoTool] = useState('binario');
 
+  // Conteúdos e comunicados publicados pelos professores nas turmas em que o estudante está matriculado
+  const [teacherClassFeed, setTeacherClassFeed] = useState({
+    enrolledClasses: [],
+    contents: [],
+    announcements: [],
+  });
+
+  useEffect(() => {
+    if (!user) return;
+    let mounted = true;
+    TeacherService.getStudentEnrolledClassesFeed(user)
+      .then(feed => {
+        if (mounted && feed) {
+          setTeacherClassFeed({
+            enrolledClasses: feed.enrolledClasses || [],
+            contents: feed.contents || [],
+            announcements: feed.announcements || [],
+          });
+        }
+      })
+      .catch(() => {});
+    return () => {
+      mounted = false;
+    };
+  }, [user]);
+
   useEffect(() => {
     const tabFromUrl = searchParams.get('tab');
-    if (tabFromUrl && STUDY_SUBJECT_TABS.some(t => t.id === tabFromUrl) && tabFromUrl !== activeSubjectId) {
-      setActiveSubjectId(tabFromUrl);
-      const target = STUDY_SUBJECT_TABS.find(t => t.id === tabFromUrl);
-      setSubTab(target?.hasInteractiveLab ? 'lab' : 'passos');
+    if (tabFromUrl) {
+      const target = resolveStudySubjectTab
+        ? resolveStudySubjectTab(tabFromUrl)
+        : STUDY_SUBJECT_TABS.find(t => t.id === tabFromUrl);
+      if (target && target.id !== activeSubjectId) {
+        setActiveSubjectId(target.id);
+        setSubTab(target.hasInteractiveLab ? 'lab' : 'passos');
+      }
     }
   }, [searchParams, activeSubjectId]);
 
   const handleSelectSubject = (subjectId) => {
-    setActiveSubjectId(subjectId);
-    setSearchParams({ tab: subjectId });
-    const target = STUDY_SUBJECT_TABS.find(t => t.id === subjectId);
-    setSubTab(target?.hasInteractiveLab ? 'lab' : 'passos');
+    const target = resolveStudySubjectTab
+      ? resolveStudySubjectTab(subjectId)
+      : (STUDY_SUBJECT_TABS.find(t => t.id === subjectId) || STUDY_SUBJECT_TABS[0]);
+    setActiveSubjectId(target.id);
+    setSearchParams({ tab: target.id });
+    setSubTab(target.hasInteractiveLab ? 'lab' : 'passos');
   };
 
   // Progresso de exercícios concluídos
@@ -269,7 +302,12 @@ export default function MathPage() {
   const allVideosForSubject = [
     ...(activeSubject.videoSuggestions || []),
     ...(customVideos[activeSubject.id] || []),
+    ...(activeSubject.id === 'filosofia_sociologia' ? (customVideos.humanas || []) : []),
   ];
+
+  const subjectContentsFromTeachers = teacherClassFeed.contents.filter(cnt =>
+    doesSubjectMatchStudyTab(cnt.subject, activeSubject.id)
+  );
 
   const currentTools = activeSubject.id === 'matematica'
     ? MATH_TOOLS
@@ -487,12 +525,65 @@ export default function MathPage() {
                 </span>
                 <span className="badge badge-neutral">{allVideosForSubject.length}</span>
               </button>
+
+              <button
+                id="subtab-turma-btn"
+                onClick={() => setSubTab('turma')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '9px 10px',
+                  borderRadius: 6,
+                  background: subTab === 'turma' ? 'var(--color-primary-light)' : 'transparent',
+                  borderLeft: `3px solid ${subTab === 'turma' ? 'var(--color-primary)' : 'transparent'}`,
+                  color: subTab === 'turma' ? 'var(--color-primary)' : 'var(--color-text)',
+                  fontWeight: subTab === 'turma' ? 700 : 600,
+                  fontSize: '0.84rem',
+                  cursor: 'pointer',
+                }}
+              >
+                <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <GraduationCap size={15} /> Conteúdos da Turma
+                </span>
+                <span className={`badge ${subjectContentsFromTeachers.length > 0 ? 'badge-primary' : 'badge-neutral'}`}>
+                  {subjectContentsFromTeachers.length}
+                </span>
+              </button>
             </div>
           </div>
         </aside>
 
         {/* COLUNA DIREITA: Palco Principal Único (Sem barras empilhadas) */}
         <main style={{ minWidth: 0 }}>
+          {/* Destaque automático quando o professor publicou conteúdos para esta disciplina */}
+          {subjectContentsFromTeachers.length > 0 && subTab !== 'turma' && (
+            <div
+              className="card"
+              style={{
+                marginBottom: 16,
+                padding: '12px 16px',
+                borderLeft: '4px solid var(--color-primary)',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                flexWrap: 'wrap',
+                gap: 10,
+              }}
+            >
+              <div style={{ fontSize: '0.86rem' }}>
+                <strong>📚 {subjectContentsFromTeachers.length} conteúdo(s) publicado(s) pelo professor em {activeSubject.shortLabel}:</strong>{' '}
+                {subjectContentsFromTeachers.map(c => c.title).join(' · ')}
+              </div>
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={() => setSubTab('turma')}
+              >
+                Ver materiais da turma
+              </button>
+            </div>
+          )}
           {/* ══════════════════════════════════════════════════════════════════
               1. SIMULADORES DE MATEMÁTICA (LDB)
              ══════════════════════════════════════════════════════════════════ */}
@@ -1319,8 +1410,15 @@ export default function MathPage() {
                 return (
                   <div key={ex.id} className="card">
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                         <span className="badge badge-neutral">Questão {index + 1}</span>
+                        {ex.subject && <span className="chip">{ex.subject}</span>}
+                        {ex.topic && <span className="chip">{ex.topic}</span>}
+                        {ex.difficulty && (
+                          <span className={`badge ${ex.difficulty === 'Avançado' ? 'badge-danger' : ex.difficulty === 'Intermediário' ? 'badge-warning' : 'badge-primary'}`}>
+                            {ex.difficulty}
+                          </span>
+                        )}
                         <h4>{ex.title}</h4>
                         {isCompleted ? (
                           <span className="badge badge-success">Concluído (+10 XP)</span>
@@ -1504,6 +1602,82 @@ export default function MathPage() {
                   </div>
                 </form>
               </div>
+            </div>
+          )}
+
+          {/* ══════════════════════════════════════════════════════════════════
+              6. CONTEÚDOS E MATERIAIS PUBLICADOS PELO PROFESSOR NA TURMA
+             ══════════════════════════════════════════════════════════════════ */}
+          {subTab === 'turma' && (
+            <div className="card">
+              <div style={{ marginBottom: 16 }}>
+                <h2 style={{ marginBottom: 4 }}>Conteúdos da Turma em {activeSubject.shortLabel}</h2>
+                <p style={{ fontSize: '0.86rem', color: 'var(--color-text-secondary)', margin: 0 }}>
+                  Materiais, apostilas e links publicados pelos seus professores para a sua turma.
+                </p>
+              </div>
+
+              {subjectContentsFromTeachers.length === 0 ? (
+                <div style={{
+                  padding: '28px 20px',
+                  borderRadius: 10,
+                  background: 'var(--color-bg-subtle)',
+                  border: '1px dashed var(--color-border)',
+                  textAlign: 'center',
+                  color: 'var(--color-text-muted)',
+                  fontSize: '0.88rem',
+                }}>
+                  Nenhum material específico de <strong>{activeSubject.shortLabel}</strong> foi publicado pelos professores da sua turma até o momento.
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  {subjectContentsFromTeachers.map(cnt => (
+                    <div
+                      key={cnt.id}
+                      style={{
+                        padding: '16px 18px',
+                        borderRadius: 10,
+                        background: 'var(--color-bg-input)',
+                        border: '1px solid var(--color-border)',
+                        borderLeft: '4px solid var(--color-primary)',
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap', marginBottom: 6 }}>
+                        <div>
+                          <h3 style={{ fontSize: '1rem', margin: '0 0 4px' }}>{cnt.title}</h3>
+                          <div style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
+                            {cnt.className && <strong>{cnt.className} · </strong>}
+                            Disciplina: {cnt.subject} · Prof. {cnt.authorName} ·{' '}
+                            {cnt.createdAt ? new Date(cnt.createdAt).toLocaleDateString('pt-BR') : ''}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          onClick={() => speakText(`${cnt.title}. ${cnt.description || ''}`)}
+                        >
+                          <Volume2 size={14} /> Ouvir
+                        </button>
+                      </div>
+                      {cnt.description && (
+                        <p style={{ fontSize: '0.88rem', color: 'var(--color-text-secondary)', margin: '8px 0 12px', whiteSpace: 'pre-wrap' }}>
+                          {cnt.description}
+                        </p>
+                      )}
+                      {cnt.resourceUrl && (
+                        <a
+                          href={cnt.resourceUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="btn btn-primary btn-sm"
+                        >
+                          <ExternalLink size={14} /> Abrir material / videoaula
+                        </a>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </main>
