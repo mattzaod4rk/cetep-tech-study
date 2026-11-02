@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Play, Pause, RotateCcw, Square, Timer } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
+import { Play, Pause, RotateCcw, Square, Timer, BookOpen, ShieldAlert } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { useApp } from '../contexts/AppContext.jsx';
 import * as DataService from '../services/DataService.js';
 import { formatTimer } from '../utils/dates.js';
+import { SUBJECT_GROUPS } from '../utils/subjects.js';
 import toast from 'react-hot-toast';
 
 const PRESETS = [
@@ -14,23 +16,44 @@ const PRESETS = [
 
 export default function FocusPage() {
   const { user } = useAuth();
-  const { awardPoints } = useApp();
+  const { saveFocusSessionWithReward } = useApp();
+  const [searchParams] = useSearchParams();
 
-  const [duration, setDuration] = useState(25); // minutes
+  // Matéria vinculada à sessão (vem da URL ?subject=... ou do Plano de Hoje do CETEP)
+  const [subject, setSubject] = useState(() => {
+    const fromQuery = searchParams.get('subject');
+    if (fromQuery) return fromQuery;
+    if (user?.id) {
+      const plan = DataService.getWeeklyPlan(user.id);
+      const todaySubjects = plan?.[new Date().getDay()]?.subjects || [];
+      if (todaySubjects.length > 0) return todaySubjects[0];
+    }
+    return 'Matemática e suas Tecnologias';
+  });
+
+  const [duration, setDuration] = useState(() => {
+    const minParam = parseInt(searchParams.get('minutes') || '', 10);
+    return !Number.isNaN(minParam) && minParam >= 5 && minParam <= 240 ? minParam : 25;
+  });
   const [custom, setCustom] = useState('');
   const [customActive, setCustomActive] = useState(false);
-  const [remaining, setRemaining] = useState(25 * 60); // seconds
+  const [remaining, setRemaining] = useState(() => duration * 60);
   const [running, setRunning] = useState(false);
   const [started, setStarted] = useState(false);
   const [finished, setFinished] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [confirmEarlyExit, setConfirmEarlyExit] = useState(false);
+
   const intervalRef = useRef(null);
   const startTimeRef = useRef(null);
   const pausedElapsedRef = useRef(0);
+  const sessionIdRef = useRef(null);
+  const finishingRef = useRef(false);
 
   const total = duration * 60;
   const progress = 1 - remaining / total;
   const circumference = 2 * Math.PI * 45; // r=45
+  const minRequiredSeconds = DataService.MIN_FOCUS_SECONDS || 300; // 5 min
 
   const selectPreset = (min) => {
     if (started) return;
@@ -43,8 +66,8 @@ export default function FocusPage() {
 
   const applyCustom = () => {
     const min = parseInt(custom, 10);
-    if (isNaN(min) || min < 1 || min > 240) {
-      toast.error('Digite um tempo entre 1 e 240 minutos.');
+    if (isNaN(min) || min < 5 || min > 240) {
+      toast.error('Digite um tempo entre 5 e 240 minutos.');
       return;
     }
     setDuration(min);
@@ -54,6 +77,9 @@ export default function FocusPage() {
   };
 
   const startTimer = useCallback(() => {
+    sessionIdRef.current = `focus-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    finishingRef.current = false;
+    setConfirmEarlyExit(false);
     setStarted(true);
     setRunning(true);
     setFinished(false);
@@ -79,6 +105,7 @@ export default function FocusPage() {
   };
 
   const resumeTimer = () => {
+    setConfirmEarlyExit(false);
     startTimeRef.current = Date.now();
     setRunning(true);
     intervalRef.current = setInterval(() => {
@@ -96,6 +123,8 @@ export default function FocusPage() {
 
   const resetTimer = () => {
     clearInterval(intervalRef.current);
+    finishingRef.current = false;
+    setConfirmEarlyExit(false);
     setRunning(false);
     setStarted(false);
     setFinished(false);
@@ -104,41 +133,67 @@ export default function FocusPage() {
     pausedElapsedRef.current = 0;
   };
 
-  const finishSession = useCallback(() => {
+  const handleFinishRequest = () => {
+    if (finishingRef.current) return;
+
+    // Anti-farm de XP: se não terminou o tempo e estudou menos de 5 minutos, avisa antes
+    if (!finished && elapsedSeconds < minRequiredSeconds) {
+      if (running) pauseTimer();
+      setConfirmEarlyExit(true);
+      return;
+    }
+
+    commitSession();
+  };
+
+  const commitSession = useCallback(() => {
+    if (finishingRef.current) return;
+    finishingRef.current = true;
     clearInterval(intervalRef.current);
     setRunning(false);
-
-    const durationMinutes = Math.max(1, Math.ceil(elapsedSeconds / 60));
+    setConfirmEarlyExit(false);
 
     try {
-      DataService.saveFocusSession(user.id, {
-        durationMinutes,
+      const result = saveFocusSessionWithReward({
+        sessionId: sessionIdRef.current,
+        elapsedSeconds: finished ? total : elapsedSeconds,
         plannedMinutes: duration,
         completed: finished,
+        subject,
       });
-      const result = awardPoints(15, 'focus');
-      toast.success(`🎯 Sessão registrada! +15 pts (${durationMinutes} min estudados)`, { duration: 4000 });
-      if (result.newAchievements?.length > 0) {
-        result.newAchievements.forEach(a => {
-          setTimeout(() => toast.success(`🏆 Conquista: ${a.title}!`, { duration: 5000 }), 1000);
-        });
+
+      if (result.awarded && result.session) {
+        const labelTipo = finished ? 'Sessão completa' : 'Sessão parcial validada';
+        toast.success(
+          `🎯 ${labelTipo} (${subject})! +${result.points} pts (${result.session.durationMinutes} min estudados)`,
+          { duration: 4500 }
+        );
+        if (result.newAchievements?.length > 0) {
+          result.newAchievements.forEach(a => {
+            setTimeout(() => toast.success(`🏆 Conquista: ${a.title}!`, { duration: 5000 }), 1000);
+          });
+        }
+      } else if (result.reason === 'too_short') {
+        toast('Sessão encerrada antes de 5 minutos (sem pontuação de XP).', { icon: 'ℹ️' });
       }
-    } catch (e) {
+    } catch {
       toast.error('Erro ao registrar sessão.');
     }
 
-    // Reset
+    // Reset state
     setStarted(false);
     setFinished(false);
     setRemaining(duration * 60);
     setElapsedSeconds(0);
     pausedElapsedRef.current = 0;
-  }, [elapsedSeconds, duration, finished, user.id, awardPoints]);
+    sessionIdRef.current = null;
+    finishingRef.current = false;
+  }, [elapsedSeconds, duration, finished, total, subject, saveFocusSessionWithReward]);
 
-  // Auto-finish on completion
+  // Auto-notify on completion
   useEffect(() => {
     if (finished) {
-      toast.success('⏰ Tempo esgotado! Incrível foco!', { duration: 5000 });
+      toast.success('⏰ Tempo esgotado! Clique em "Salvar sessão" para receber seu XP!', { duration: 5000 });
     }
   }, [finished]);
 
@@ -156,6 +211,8 @@ export default function FocusPage() {
     return () => { document.title = 'CETEP Tech Study'; };
   }, [remaining, started]);
 
+  const secondsUntilValid = Math.max(0, minRequiredSeconds - elapsedSeconds);
+
   return (
     <div>
       {!started ? (
@@ -163,12 +220,38 @@ export default function FocusPage() {
         <div>
           <div className="page-header">
             <div className="page-header-left">
-              <h1>Modo Foco</h1>
-              <p>Elimine distrações e concentre-se no que importa.</p>
+              <div className="academic-kicker">
+                <Timer size={14} />
+                Gestão de Tempo · Método Pomodoro Guiado
+              </div>
+              <h1>Sessão de Foco</h1>
+              <p>Selecione a disciplina da matriz curricular e dedique tempo concentrado sem distrações.</p>
             </div>
           </div>
 
-          <div style={{ maxWidth: 480, margin: '0 auto' }}>
+          <div style={{ maxWidth: 520, margin: '0 auto' }}>
+            {/* Subject selection (LDB + SUPROT/SEC-BA) */}
+            <div className="card" style={{ marginBottom: 16 }}>
+              <label className="form-label" htmlFor="focus-subject-select" style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, fontWeight: 700 }}>
+                <BookOpen size={16} style={{ color: 'var(--color-primary)' }} />
+                Qual matéria você vai focar agora?
+              </label>
+              <select
+                id="focus-subject-select"
+                className="form-select"
+                value={subject}
+                onChange={e => setSubject(e.target.value)}
+              >
+                {SUBJECT_GROUPS.map(group => (
+                  <optgroup key={group.id} label={group.label}>
+                    {group.subjects.map(s => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+            </div>
+
             {/* Preset selection */}
             <div className="card" style={{ marginBottom: 20 }}>
               <h3 style={{ marginBottom: 16 }}>Escolha a duração</h3>
@@ -205,9 +288,9 @@ export default function FocusPage() {
                     className="form-input"
                     style={{ paddingLeft: 34 }}
                     type="number"
-                    min={1}
+                    min={5}
                     max={240}
-                    placeholder="Personalizado (min)"
+                    placeholder="Personalizado (mín. 5 min)"
                     value={custom}
                     onChange={e => setCustom(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && applyCustom()}
@@ -221,17 +304,22 @@ export default function FocusPage() {
                   ✓ Tempo personalizado: {duration} min selecionado
                 </p>
               )}
+
+              <div style={{ marginTop: 12, fontSize: '0.8rem', color: 'var(--color-text-muted)', display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
+                <span>⚡ Ciclo completo: <strong>+{duration >= 25 ? 20 : 15} XP</strong></span>
+                <span>⏱️ Parcial (mín. 5 min): <strong>+5 XP</strong></span>
+              </div>
             </div>
 
             {/* Tips */}
             <div className="card" style={{ marginBottom: 24, background: 'var(--color-primary-light)', border: '1px solid var(--color-primary-muted)' }}>
-              <h4 style={{ color: 'var(--color-primary)', marginBottom: 8 }}>💡 Dicas para focar melhor</h4>
+              <h4 style={{ color: 'var(--color-primary)', marginBottom: 8 }}>💡 Dicas AEE para focar sem sobrecarga</h4>
               <ul style={{ display: 'flex', flexDirection: 'column', gap: 6, paddingLeft: 0 }}>
                 {[
                   'Deixe o celular longe ou no modo silencioso',
                   'Tenha água e um caderno por perto',
-                  'Escolha UMA tarefa para trabalhar nesta sessão',
-                  'Após a sessão, faça uma pausa curta de 5-10 min',
+                  'Trabalhe em apenas UM pequeno passo por sessão',
+                  'Estude pelo menos 5 minutos para validar sua ofensiva diária (🔥)',
                 ].map((tip, i) => (
                   <li key={i} style={{ display: 'flex', gap: 8, fontSize: '0.88rem', color: 'var(--color-text-secondary)' }}>
                     <span style={{ color: 'var(--color-primary)', fontWeight: 700, flexShrink: 0 }}>{i + 1}.</span> {tip}
@@ -246,7 +334,7 @@ export default function FocusPage() {
               onClick={startTimer}
               id="focus-start-btn"
             >
-              <Play size={22} /> Iniciar sessão de {duration} minutos
+              <Play size={22} /> Iniciar foco em {subject} ({duration} min)
             </button>
           </div>
         </div>
@@ -261,7 +349,8 @@ export default function FocusPage() {
                 {finished ? 'Sessão completa!' : running ? 'Em foco' : 'Pausado'}
               </span>
             </div>
-            <p style={{ color: 'var(--color-text-muted)', fontSize: '0.85rem' }}>Sessão de {duration} minutos</p>
+            <p style={{ color: 'var(--color-primary)', fontWeight: 700, fontSize: '0.95rem', marginBottom: 2 }}>{subject}</p>
+            <p style={{ color: 'var(--color-text-muted)', fontSize: '0.82rem' }}>Meta: {duration} minutos</p>
           </div>
 
           {/* Ring timer */}
@@ -283,6 +372,37 @@ export default function FocusPage() {
             </div>
           </div>
 
+          {/* Early finish warning modal/banner (Anti-XP Farm protection) */}
+          {confirmEarlyExit && !finished && (
+            <div
+              className="card"
+              role="alert"
+              style={{
+                maxWidth: 420,
+                border: '2px solid var(--color-warning)',
+                background: 'var(--color-warning-light)',
+                padding: 16,
+                textAlign: 'center',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontWeight: 700, color: 'var(--color-text)', marginBottom: 6 }}>
+                <ShieldAlert size={18} style={{ color: 'var(--color-warning)' }} />
+                Sessão ainda muito curta ({formatTimer(elapsedSeconds)})
+              </div>
+              <p style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)', marginBottom: 12 }}>
+                Para evitar cliques acidentais e proteger seu progresso real, sessões com menos de <strong>5 minutos</strong> não concedem XP. Faltam apenas <strong>{formatTimer(secondsUntilValid)}</strong> para garantir +5 XP!
+              </p>
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
+                <button className="btn btn-primary btn-sm" onClick={resumeTimer} id="focus-continue-btn">
+                  <Play size={14} /> Continuar focando
+                </button>
+                <button className="btn btn-secondary btn-sm" onClick={resetTimer} id="focus-discard-btn">
+                  Encerrar sem salvar
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Controls */}
           <div className="focus-controls">
             {!finished && (
@@ -301,15 +421,17 @@ export default function FocusPage() {
               <RotateCcw size={18} /> Reiniciar
             </button>
 
-            <button className="btn btn-success btn-lg" onClick={finishSession} id="focus-finish-btn">
-              <Square size={18} /> {finished ? 'Salvar sessão' : 'Finalizar agora'}
+            <button className="btn btn-success btn-lg" onClick={handleFinishRequest} id="focus-finish-btn">
+              <Square size={18} /> {finished ? `Salvar (+${duration >= 25 ? 20 : 15} XP)` : elapsedSeconds >= minRequiredSeconds ? 'Finalizar (+5 XP)' : 'Finalizar agora'}
             </button>
           </div>
 
-          <p style={{ color: 'var(--color-text-muted)', fontSize: '0.82rem', textAlign: 'center', maxWidth: 280 }}>
+          <p style={{ color: 'var(--color-text-muted)', fontSize: '0.82rem', textAlign: 'center', maxWidth: 320 }}>
             {finished
-              ? '🎉 Parabéns! Clique em "Salvar sessão" para registrar seu progresso.'
-              : 'Clique em "Finalizar agora" para registrar sua sessão mesmo antes do tempo acabar.'}
+              ? '🎉 Parabéns! Clique em "Salvar" para registrar seu tempo de estudo e XP.'
+              : elapsedSeconds >= minRequiredSeconds
+                ? '✓ Tempo mínimo de 5 min atingido! Se precisar parar agora, você já garante +5 XP.'
+                : `Estude pelo menos 5 minutos para validar a sessão no seu histórico e ganhar XP.`}
           </p>
         </div>
       )}

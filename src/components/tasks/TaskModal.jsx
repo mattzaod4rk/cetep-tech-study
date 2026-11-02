@@ -3,9 +3,8 @@ import { X } from 'lucide-react';
 import * as DataService from '../../services/DataService.js';
 import { useAuth } from '../../contexts/AuthContext.jsx';
 import { todayISO } from '../../utils/dates.js';
+import { SUBJECT_GROUPS } from '../../utils/subjects.js';
 import toast from 'react-hot-toast';
-
-const SUBJECTS = ['Algoritmos', 'Redes', 'Hardware', 'S.O.', 'Banco de Dados', 'Web', 'Programação', 'Inglês Técnico', 'Outro'];
 
 export default function TaskModal({ onClose, onSave, task = null }) {
   const { user } = useAuth();
@@ -83,10 +82,14 @@ export default function TaskModal({ onClose, onSave, task = null }) {
 
             <div className="grid-2">
               <div className="form-group">
-                <label className="form-label" htmlFor="task-subject">Matéria</label>
+                <label className="form-label" htmlFor="task-subject">Matéria (LDB / SUPROT CETEP)</label>
                 <select id="task-subject" className="form-select" value={form.subject} onChange={e => set('subject', e.target.value)}>
                   <option value="">Sem matéria</option>
-                  {SUBJECTS.map(s => <option key={s} value={s}>{s}</option>)}
+                  {SUBJECT_GROUPS.map(group => (
+                    <optgroup key={group.id} label={group.label}>
+                      {group.subjects.map(s => <option key={s} value={s}>{s}</option>)}
+                    </optgroup>
+                  ))}
                 </select>
               </div>
 

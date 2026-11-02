@@ -17,6 +17,7 @@ export function AppProvider({ children }) {
   });
   const [gamification, setGamification] = useState(null);
   const [isTranscriptionOpen, setIsTranscriptionOpen] = useState(false);
+  const [syncRevision, setSyncRevision] = useState(0);
 
   useEffect(() => {
     if (!user) return;
@@ -24,6 +25,22 @@ export function AppProvider({ children }) {
     setSettings(prev => ({ ...prev, ...s }));
     const g = DataService.getGamification(user.id);
     setGamification(g);
+  }, [user]);
+
+  // Atualiza estado automaticamente quando o Cloud Firestore emite mudanças em tempo real
+  useEffect(() => {
+    if (!user || typeof window === 'undefined') return undefined;
+    const handleCloudSync = (evt) => {
+      const detail = evt?.detail;
+      if (detail?.userId && detail.userId !== user.id) return;
+      const s = DataService.getSettings(user.id);
+      setSettings(prev => ({ ...prev, ...s }));
+      const g = DataService.getGamification(user.id);
+      setGamification(g);
+      setSyncRevision(r => r + 1);
+    };
+    window.addEventListener('cetep:cloud-sync', handleCloudSync);
+    return () => window.removeEventListener('cetep:cloud-sync', handleCloudSync);
   }, [user]);
 
   // Apply theme, font scale and accessibility modes to root HTML
@@ -103,6 +120,20 @@ export function AppProvider({ children }) {
     return result;
   }, [user, refreshGamification]);
 
+  const saveFocusSessionWithReward = useCallback((sessionData) => {
+    if (!user) return { saved: false, awarded: false, points: 0, newAchievements: [] };
+    const result = DataService.saveFocusSessionWithReward(user.id, sessionData);
+    if (result.awarded) refreshGamification();
+    return result;
+  }, [user, refreshGamification]);
+
+  const completeStudyExerciseWithReward = useCallback((exerciseId, points) => {
+    if (!user) return { awarded: false, points: 0, newAchievements: [] };
+    const result = DataService.completeStudyExerciseWithReward(user.id, exerciseId, points);
+    if (result.awarded) refreshGamification();
+    return result;
+  }, [user, refreshGamification]);
+
   return (
     <AppContext.Provider value={{
       settings,
@@ -114,10 +145,13 @@ export function AppProvider({ children }) {
       isTranscriptionOpen,
       setIsTranscriptionOpen,
       gamification,
+      syncRevision,
       awardPoints,
       refreshGamification,
       completeTaskWithReward,
       toggleSubtaskWithReward,
+      saveFocusSessionWithReward,
+      completeStudyExerciseWithReward,
     }}>
       {children}
     </AppContext.Provider>
@@ -129,4 +163,3 @@ export function useApp() {
   if (!ctx) throw new Error('useApp must be used inside AppProvider');
   return ctx;
 }
-

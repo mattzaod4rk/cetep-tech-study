@@ -7,7 +7,7 @@ import { formatMinutes, SHORT_WEEKDAYS, parseLocalDate } from '../utils/dates.js
 
 export default function ProgressPage() {
   const { user } = useAuth();
-  const { gamification, refreshGamification } = useApp();
+  const { gamification, refreshGamification, syncRevision } = useApp();
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [sessions, setSessions] = useState([]);
@@ -27,7 +27,7 @@ export default function ProgressPage() {
     }
   }, [user.id, refreshGamification]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(); }, [load, syncRevision]);
 
   if (loading) return <div className="loading-center"><div className="spinner" /></div>;
 
@@ -42,6 +42,10 @@ export default function ProgressPage() {
     ? Math.min(100, (points / levelInfo.next) * 100)
     : 100;
 
+  const weekStreak = gamification?.weekStreak || [];
+  const streakShields = gamification?.streakShields ?? 1;
+  const bestStreak = gamification?.bestStreak || gamification?.streakDays || 0;
+
   // Last 5 focus sessions
   const recentSessions = [...sessions].reverse().slice(0, 5);
 
@@ -49,46 +53,48 @@ export default function ProgressPage() {
     <div>
       <div className="page-header">
         <div className="page-header-left">
-          <h1>Progresso</h1>
-          <p>Acompanhe sua evolução e conquistas.</p>
+          <div className="academic-kicker">
+            <Trophy size={14} />
+            Histórico Acadêmico & Indicadores de Estudo
+          </div>
+          <h1>Desempenho</h1>
+          <p>Acompanhe sua carga horária dedicada, constância diária e evolução no curso.</p>
         </div>
       </div>
 
       {/* ─── Stats Summary ───────────────────────── */}
-      <div className="grid-4" style={{ marginBottom: 28 }}>
+      <div className="grid-4" style={{ marginBottom: 24 }}>
         {[
           {
-            icon: <CheckSquare size={20} />,
-            label: 'Tarefas concluídas',
+            icon: <CheckSquare size={17} />,
+            label: 'Atividades concluídas',
             value: stats?.totalTasksCompleted || 0,
-            sub: `${stats?.completedThisWeek || 0} esta semana`,
-            color: 'hsl(220, 80%, 55%)', bg: 'hsl(220, 80%, 95%)',
+            sub: `${stats?.completedThisWeek || 0} nesta semana`,
           },
           {
-            icon: <Clock size={20} />,
-            label: 'Tempo total estudado',
+            icon: <Clock size={17} />,
+            label: 'Carga horária total',
             value: formatMinutes(stats?.totalMinutesAllTime || 0),
-            sub: `${formatMinutes(stats?.totalMinutesThisWeek || 0)} esta semana`,
-            color: 'hsl(142, 70%, 38%)', bg: 'hsl(142, 60%, 92%)',
+            sub: `${formatMinutes(stats?.totalMinutesThisWeek || 0)} nesta semana`,
           },
           {
-            icon: <Timer size={20} />,
-            label: 'Sessões de foco',
+            icon: <Timer size={17} />,
+            label: 'Ciclos de foco',
             value: stats?.totalSessions || 0,
-            sub: `${stats?.focusSessionsThisWeek || 0} esta semana`,
-            color: 'hsl(38, 90%, 45%)', bg: 'hsl(38, 90%, 93%)',
+            sub: `${stats?.focusSessionsThisWeek || 0} nesta semana`,
           },
           {
-            icon: <Flame size={20} />,
+            icon: <Flame size={17} />,
             label: 'Sequência atual',
             value: `${gamification?.streakDays || 0} dias`,
-            sub: 'dias consecutivos',
-            color: 'hsl(15, 85%, 52%)', bg: 'hsl(15, 85%, 93%)',
+            sub: `Recorde: ${bestStreak}d · Proteção: ${streakShields}/2`,
           },
         ].map((s, i) => (
           <div key={i} className="stat-card">
-            <div className="stat-card-icon" style={{ background: s.bg, color: s.color }}>{s.icon}</div>
-            <div className="stat-label">{s.label}</div>
+            <div className="flex items-center justify-between">
+              <span className="stat-label">{s.label}</span>
+              <div className="stat-card-icon">{s.icon}</div>
+            </div>
             <div className="stat-value">{s.value}</div>
             <div className="stat-sub">{s.sub}</div>
           </div>
@@ -96,8 +102,57 @@ export default function ProgressPage() {
       </div>
 
       <div className="grid-2" style={{ gap: 24 }}>
-        {/* ─── Weekly Chart ─────────────────────── */}
+        {/* ─── Left Column: Weekly Chart + Streak + Sessions ─── */}
         <div>
+          {/* Duolingo-style 7-day Streak Card */}
+          <div className="card" style={{ marginBottom: 20 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
+              <h3 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                🔥 Sequência de Estudos (Últimos 7 dias)
+              </h3>
+              <span className="badge badge-primary">🧊 {streakShields}/2 Escudos de Sequência</span>
+            </div>
+            <p style={{ fontSize: '0.84rem', color: 'var(--color-text-secondary)', marginBottom: 14 }}>
+              O <strong>Escudo de Sequência (🧊)</strong> protege sua ofensiva automaticamente caso você esqueça de estudar por 1 dia. A cada 3 dias seguidos você ganha +1 escudo!
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6 }}>
+              {weekStreak.map(dayItem => {
+                const isDone = dayItem.status === 'active';
+                const isShield = dayItem.status === 'shield';
+                const isTodayPending = dayItem.status === 'today_pending';
+                return (
+                  <div key={dayItem.date} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                    <div
+                      style={{
+                        width: 36,
+                        height: 36,
+                        borderRadius: '50%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontWeight: 800,
+                        border: dayItem.isToday ? '2px solid var(--color-primary)' : '1px solid var(--color-border)',
+                        background: isDone
+                          ? 'hsl(28, 95%, 52%)'
+                          : isShield
+                            ? 'hsl(200, 85%, 92%)'
+                            : isTodayPending
+                              ? 'var(--color-primary-light)'
+                              : 'var(--color-bg-input)',
+                        color: isDone ? '#fff' : 'var(--color-text)',
+                      }}
+                    >
+                      {isDone ? '🔥' : isShield ? '🧊' : dayItem.dayShort.charAt(0)}
+                    </div>
+                    <span style={{ fontSize: '0.72rem', fontWeight: dayItem.isToday ? 700 : 400, color: dayItem.isToday ? 'var(--color-primary)' : 'var(--color-text-muted)' }}>
+                      {dayItem.dayShort}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
           <div className="card">
             <h3 style={{ marginBottom: 20 }}>⏱ Tempo estudado — últimos 7 dias</h3>
 
@@ -153,15 +208,22 @@ export default function ProgressPage() {
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {recentSessions.map((s, i) => (
-                  <div key={s.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: i < recentSessions.length - 1 ? '1px solid var(--color-border)' : 'none' }}>
+                  <div key={s.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: i < recentSessions.length - 1 ? '1px solid var(--color-border)' : 'none', flexWrap: 'wrap', gap: 6 }}>
                     <div>
                       <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>{formatMinutes(s.durationMinutes)}</span>
                       <span style={{ color: 'var(--color-text-muted)', fontSize: '0.8rem', marginLeft: 8 }}>
-                        de {s.plannedMinutes} min planejados
+                        de {s.plannedMinutes} min
                       </span>
+                      {s.subject && (
+                        <span className="chip" style={{ marginLeft: 8 }}>{s.subject}</span>
+                      )}
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      {s.completed && <span className="badge badge-success">✓ Completa</span>}
+                      {s.completed ? (
+                        <span className="badge badge-success">✓ Completa</span>
+                      ) : (
+                        <span className="badge badge-neutral">Parcial (+5 XP)</span>
+                      )}
                       <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
                         {new Date(s.completedAt).toLocaleDateString('pt-BR')}
                       </span>
@@ -220,14 +282,17 @@ export default function ProgressPage() {
 
           {/* Points guide */}
           <div className="card" style={{ marginBottom: 20, background: 'var(--color-bg-subtle)', boxShadow: 'none' }}>
-            <h4 style={{ marginBottom: 10 }}>Como ganhar pontos</h4>
+            <h4 style={{ marginBottom: 10 }}>Como ganhar pontos (Sistema Anti-Farm)</h4>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {[
-                { action: 'Concluir uma tarefa', pts: '+10 pts' },
-                { action: 'Concluir uma subtarefa', pts: '+5 pts' },
-                { action: 'Finalizar sessão de foco', pts: '+15 pts' },
+                { action: 'Concluir uma tarefa (1ª conclusão)', pts: '+10 pts' },
+                { action: 'Concluir uma subtarefa (1ª conclusão)', pts: '+5 pts' },
+                { action: 'Resolver exercício guiado em Estudos & Mat.', pts: '+10 pts' },
+                { action: 'Sessão de foco completa (≥ 25 min)', pts: '+20 pts' },
+                { action: 'Sessão de foco completa (< 25 min)', pts: '+15 pts' },
+                { action: 'Sessão de foco parcial validada (≥ 5 min)', pts: '+5 pts' },
               ].map(item => (
-                <div key={item.action} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.88rem', padding: '6px 0', borderBottom: '1px solid var(--color-border)' }}>
+                <div key={item.action} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.86rem', padding: '6px 0', borderBottom: '1px solid var(--color-border)' }}>
                   <span>{item.action}</span>
                   <span style={{ fontWeight: 700, color: 'var(--color-primary)' }}>{item.pts}</span>
                 </div>

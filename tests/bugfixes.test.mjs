@@ -169,3 +169,172 @@ test('editar a tarefa (updateTask) preserva a flag de XP das subtarefas', () => 
   assert.equal(r.awarded, false);
   assert.equal(points(), 5);
 });
+
+// ── PASSO 1: Anti-Farm de XP no Modo Foco ────────────────────────────────────
+test('Modo Foco: sessão encerrada antes de 5 minutos (300s) não salva nem dá XP', () => {
+  const res = DS.saveFocusSessionWithReward(USER, {
+    sessionId: 'sess-curta-1',
+    elapsedSeconds: 12, // 12 segundos (tentativa de farm)
+    plannedMinutes: 25,
+    completed: false,
+    subject: 'Matemática e suas Tecnologias',
+  });
+  assert.equal(res.saved, false);
+  assert.equal(res.awarded, false);
+  assert.equal(res.reason, 'too_short');
+  assert.equal(points(), 0);
+  assert.equal(DS.getFocusSessions(USER).length, 0);
+});
+
+test('Modo Foco: sessão parcial válida (>= 5 min) concede +5 XP (+25 conquista 1º foco) e impede duplicata por sessionId', () => {
+  const res1 = DS.saveFocusSessionWithReward(USER, {
+    sessionId: 'sess-parcial-1',
+    elapsedSeconds: 360, // 6 minutos
+    plannedMinutes: 25,
+    completed: false,
+    subject: 'Lógica de Programação',
+  });
+  assert.equal(res1.saved, true);
+  assert.equal(res1.awarded, true);
+  assert.equal(res1.points, 5);
+  assert.equal(points(), 5 + 25); // 5 parcial + 25 conquista first_focus
+
+  // Cliques repetidos com mesmo sessionId não geram XP extra
+  const dup = DS.saveFocusSessionWithReward(USER, {
+    sessionId: 'sess-parcial-1',
+    elapsedSeconds: 360,
+    plannedMinutes: 25,
+    completed: false,
+  });
+  assert.equal(dup.saved, false);
+  assert.equal(dup.awarded, false);
+  assert.equal(dup.reason, 'duplicate');
+  assert.equal(points(), 30);
+});
+
+// ── PASSO 2: Sequência Diária (Streak Duolingo) e Escudo de Sequência ────────
+test('Streak: 3 dias consecutivos incrementam ofensiva e Escudo de Sequência protege 1 dia perdido', () => {
+  const day1 = new Date(2026, 9, 10, 14, 0); // 10/10/2026
+  const day2 = new Date(2026, 9, 11, 14, 0); // 11/10/2026
+  const day3 = new Date(2026, 9, 12, 14, 0); // 12/10/2026
+
+  DS.addPoints(USER, 10, 'task', day1);
+  assert.equal(DS.getGamification(USER, day1).streakDays, 1);
+
+  DS.addPoints(USER, 10, 'task', day2);
+  assert.equal(DS.getGamification(USER, day2).streakDays, 2);
+
+  DS.addPoints(USER, 10, 'task', day3);
+  const gDay3 = DS.getGamification(USER, day3);
+  assert.equal(gDay3.streakDays, 3);
+  assert.equal(gDay3.achievements.includes('streak_3'), true);
+
+  // Pula o dia 13/10/2026 e abre o app em 14/10/2026: Escudo de Sequência (🧊) protege!
+  const day5 = new Date(2026, 9, 14, 14, 0);
+  const gAfterOneMissedDay = DS.getGamification(USER, day5);
+  assert.equal(gAfterOneMissedDay.streakStatus, 'shield_protected');
+  assert.equal(gAfterOneMissedDay.streakDays, 3);
+  assert.equal(gAfterOneMissedDay.shieldUsedDates.includes('2026-10-13'), true);
+
+  // Se ficar muitos dias sem entrar (ex: 20/10/2026), a sequência zera
+  const dayFar = new Date(2026, 9, 20, 14, 0);
+  const gReset = DS.getGamification(USER, dayFar);
+  assert.equal(gReset.streakDays, 0);
+  assert.equal(gReset.bestStreak, 3); // Recorde preservado
+});
+
+// ── PASSO 3 & 4: Planejamento Semanal CETEP e Exercícios Guiados Anti-Farm ───
+test('Planejamento Semanal CETEP e Exercícios Guiados (+10 XP único por exercício)', () => {
+  const plan = DS.getWeeklyPlan(USER);
+  assert.equal(Array.isArray(plan[1].subjects), true);
+  assert.equal(plan[1].subjects.includes('Matemática e suas Tecnologias'), true);
+
+  const r1 = DS.completeStudyExerciseWithReward(USER, 'ex-mat-1', 10);
+  assert.equal(r1.awarded, true);
+  assert.equal(r1.points, 10);
+  assert.equal(points(), 10 + 20); // +10 exercício + 20 conquista first_math
+
+  // Refazer o mesmo exercício não farma XP
+  const r2 = DS.completeStudyExerciseWithReward(USER, 'ex-mat-1', 10);
+  assert.equal(r2.awarded, false);
+  assert.equal(r2.points, 0);
+  assert.equal(points(), 30);
+});
+
+// ── PASSO 5: Segurança, Isolamento por UID, Anti-Escalação e Migração Beta ──
+test('Isolamento por UID: estudante A nunca acessa nem modifica dados do estudante B', () => {
+  const uidA = 'firebase-uid-aluno-a';
+  const uidB = 'firebase-uid-aluno-b';
+
+  DS.createTask(uidA, { title: 'Tarefa Secreta A', deadline: '2026-11-10', priority: 'high' });
+  DS.createAgendaEvent(uidA, { title: 'Prova de Redes A', date: '2026-11-12', type: 'Prova' });
+  DS.addPoints(uidA, 50, 'task');
+
+  assert.equal(DS.getTasks(uidA).length, 1);
+  assert.equal(DS.getTasks(uidB).length, 0);
+  assert.equal(DS.getAgendaEvents(uidB).length, 0);
+  assert.equal(DS.getGamification(uidB).points, 0);
+});
+
+test('Anti-escalação de privilégio: cadastro público e edição de perfil não concedem role professor', async () => {
+  const created = await DS.register({
+    name: 'Tentativa Admin',
+    email: 'tentativa@escola.ba.gov.br',
+    password: '123456',
+    role: 'professor', // tentativa maliciosa no cliente
+  });
+  assert.equal(created.role, 'aluno');
+
+  const updated = await DS.updateUserProfile(created.id, {
+    name: 'Nome Atualizado',
+    role: 'professor', // tentativa maliciosa de escalar role no update
+  });
+  assert.equal(updated.role, 'aluno');
+});
+
+test('Migração Beta -> Firebase: importa sem senhas antigas, impede duplicatas e exige confirmação antes de apagar', async () => {
+  // Simula conta criada na versão antiga em localStorage
+  const legacyUser = await DS.register({
+    name: 'Estudante Beta',
+    email: 'beta@cetep.ba.gov.br',
+    password: 'senhaAntiga123',
+  });
+  const t1 = DS.createTask(legacyUser.id, { title: ' Lista de Frações', priority: 'high' });
+  DS.createAgendaEvent(legacyUser.id, { title: 'Mostra Científica AEE', date: '2026-11-05' });
+  DS.completeTaskWithReward(legacyUser.id, t1.id);
+
+  // Nova conta autenticada via Firebase UID
+  const firebaseUid = 'firebase-uid-novo-123';
+  DS.setSessionUser({ uid: firebaseUid, name: 'Estudante Beta', email: 'beta@cetep.ba.gov.br', role: 'aluno' });
+
+  const detected = DS.getLegacyLocalAccounts(firebaseUid);
+  assert.equal(detected.length, 1);
+  assert.equal(detected[0].id, legacyUser.id);
+  assert.equal('password' in detected[0], false); // Senha antiga NUNCA exposta
+
+  // Tentar apagar dados locais antes de migrar deve falhar por segurança
+  assert.throws(() => DS.confirmAndClearLegacyAccount(legacyUser.id, firebaseUid));
+
+  // 1ª Migração
+  const mig1 = await DS.migrateLegacyAccountToFirebase(legacyUser.id, firebaseUid);
+  assert.equal(mig1.tasksAdded, 1);
+  assert.equal(mig1.agendaAdded, 1);
+  assert.equal(DS.getTasks(firebaseUid).length, 1);
+  assert.equal(DS.getGamification(firebaseUid).points, 30);
+
+  // 2ª Migração repetida (idempotência: não duplica tarefas, eventos nem XP)
+  const mig2 = await DS.migrateLegacyAccountToFirebase(legacyUser.id, firebaseUid);
+  assert.equal(mig2.tasksAdded, 0);
+  assert.equal(mig2.agendaAdded, 0);
+  assert.equal(DS.getTasks(firebaseUid).length, 1);
+  assert.equal(DS.getGamification(firebaseUid).points, 30);
+
+  // Dados locais antigos continuam intactos até confirmação explícita
+  assert.equal(DS.getTasks(legacyUser.id).length, 1);
+
+  // Confirma e limpa dados locais antigos
+  DS.confirmAndClearLegacyAccount(legacyUser.id, firebaseUid);
+  assert.equal(DS.getTasks(legacyUser.id).length, 0);
+  assert.equal(DS.getLegacyLocalAccounts(firebaseUid).length, 0);
+});
+

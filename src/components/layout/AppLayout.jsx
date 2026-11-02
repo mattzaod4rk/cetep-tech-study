@@ -2,21 +2,27 @@ import React from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, CheckSquare, Calendar, Timer,
-  TrendingUp, Settings, LogOut, GraduationCap, Mic
+  TrendingUp, Settings, LogOut, GraduationCap, Mic, BookOpen, Flame
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext.jsx';
 import { useApp } from '../../contexts/AppContext.jsx';
 import AccessibilityBar from '../accessibility/AccessibilityBar.jsx';
 import LiveTranscriptionModal from '../accessibility/LiveTranscriptionModal.jsx';
 
-const NAV_ITEMS = [
-  { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/tasks',     icon: CheckSquare,    label: 'Tarefas'   },
-  { to: '/agenda',    icon: Calendar,       label: 'Agenda'    },
-  { to: '/focus',     icon: Timer,          label: 'Modo Foco' },
-  { to: '/progress',  icon: TrendingUp,     label: 'Progresso' },
-  { to: '/settings',  icon: Settings,       label: 'Configurações' },
+const ACADEMIC_NAV = [
+  { to: '/dashboard', icon: LayoutDashboard, label: 'Visão Geral' },
+  { to: '/math',      icon: BookOpen,        label: 'Cadernos de Estudo' },
+  { to: '/focus',     icon: Timer,           label: 'Sessão de Foco' },
 ];
+
+const ORGANIZATION_NAV = [
+  { to: '/tasks',     icon: CheckSquare,     label: 'Atividades' },
+  { to: '/agenda',    icon: Calendar,        label: 'Horário & Agenda' },
+  { to: '/progress',  icon: TrendingUp,      label: 'Desempenho' },
+  { to: '/settings',  icon: Settings,        label: 'Configurações' },
+];
+
+const MOBILE_NAV = [...ACADEMIC_NAV, ...ORGANIZATION_NAV];
 
 export default function AppLayout() {
   const { user, logout } = useAuth();
@@ -41,23 +47,37 @@ export default function AppLayout() {
       <aside className="sidebar" role="navigation" aria-label="Navegação principal">
         <div className="sidebar-logo">
           <div className="sidebar-logo-icon" aria-hidden="true">
-            <GraduationCap size={20} color="white" />
+            <GraduationCap size={19} color="white" />
           </div>
           <div className="sidebar-logo-text">
             CETEP Tech Study
-            <span>Técnico em Informática</span>
+            <span>Recôncavo II · Alberto Torres</span>
           </div>
         </div>
 
         <nav className="sidebar-nav">
-          {NAV_ITEMS.map(({ to, icon: Icon, label }) => (
+          <div className="sidebar-section-label">Ambiente de Estudo</div>
+          {ACADEMIC_NAV.map(({ to, icon: Icon, label }) => (
             <NavLink
               key={to}
               to={to}
               className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
               aria-label={label}
             >
-              <Icon size={18} aria-hidden="true" />
+              <Icon size={17} aria-hidden="true" />
+              {label}
+            </NavLink>
+          ))}
+
+          <div className="sidebar-section-label" style={{ marginTop: 10 }}>Organização Escolar</div>
+          {ORGANIZATION_NAV.map(({ to, icon: Icon, label }) => (
+            <NavLink
+              key={to}
+              to={to}
+              className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+              aria-label={label}
+            >
+              <Icon size={17} aria-hidden="true" />
               {label}
             </NavLink>
           ))}
@@ -65,36 +85,55 @@ export default function AppLayout() {
 
         <div className="sidebar-footer">
           {gamification && (
-            <div style={{ padding: '8px 12px 12px', marginBottom: '8px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                <span style={{ color: 'var(--color-sidebar-text)', fontSize: '0.75rem', fontWeight: 600 }}>
-                  {gamification.levelInfo?.title || 'Iniciante'}
+            <div
+              style={{
+                padding: '10px 12px',
+                marginBottom: '10px',
+                borderRadius: 7,
+                background: 'rgba(255,255,255,0.04)',
+                border: '1px solid rgba(255,255,255,0.07)',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                <span style={{ color: 'var(--color-sidebar-text)', fontSize: '0.73rem', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                  <Flame size={13} color="#f97316" />
+                  {gamification.streakDays || 0}d sequência
                 </span>
-                <span style={{ color: 'var(--color-sidebar-active)', fontSize: '0.75rem', fontWeight: 700 }}>
-                  {gamification.points} pts
+                <span style={{ color: '#ffffff', fontSize: '0.73rem', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
+                  {gamification.points} XP
                 </span>
               </div>
-              <div className="progress-bar" style={{ height: '4px', background: 'rgba(255,255,255,0.15)' }}>
+              <div className="progress-bar" style={{ height: '4px', background: 'rgba(255,255,255,0.12)', border: 'none' }}>
                 <div
                   className="progress-fill"
                   style={{
+                    background: 'var(--color-sidebar-active)',
                     width: gamification.levelInfo?.next
                       ? `${Math.min(100, (gamification.points / gamification.levelInfo.next) * 100)}%`
                       : '100%',
                   }}
                 />
               </div>
+              <div style={{ marginTop: 5, fontSize: '0.68rem', color: 'var(--color-sidebar-text)', opacity: 0.75 }}>
+                Nível {gamification.levelInfo?.level || 1} · {gamification.levelInfo?.title || 'Iniciante'}
+              </div>
             </div>
           )}
 
-          <div className="user-chip" onClick={handleLogout} title="Sair da conta" role="button" tabIndex={0}
-            onKeyDown={e => e.key === 'Enter' && handleLogout()}>
+          <div
+            className="user-chip"
+            onClick={handleLogout}
+            title="Sair da conta"
+            role="button"
+            tabIndex={0}
+            onKeyDown={e => e.key === 'Enter' && handleLogout()}
+          >
             <div className="user-avatar" aria-hidden="true">{initials}</div>
             <div className="user-info">
               <div className="user-name">{user?.name}</div>
-              <div className="user-role">{user?.role === 'aluno' ? 'Aluno' : 'Professor'}</div>
+              <div className="user-role">{user?.role === 'aluno' ? 'Estudante · Técnico em Informática' : 'Docente'}</div>
             </div>
-            <LogOut size={16} color="var(--color-sidebar-text)" aria-hidden="true" style={{ opacity: 0.6 }} />
+            <LogOut size={15} color="var(--color-sidebar-text)" aria-hidden="true" style={{ opacity: 0.65 }} />
           </div>
         </div>
       </aside>
@@ -116,26 +155,24 @@ export default function AppLayout() {
       {/* ── Mobile Bottom Nav ────────────────────────────── */}
       <nav className="bottom-nav" aria-label="Navegação mobile">
         <div className="bottom-nav-inner">
-          {NAV_ITEMS.map(({ to, icon: Icon, label }) => (
+          {MOBILE_NAV.slice(0, 5).map(({ to, icon: Icon, label }) => (
             <NavLink
               key={to}
               to={to}
               className={({ isActive }) => `bottom-nav-item ${isActive ? 'active' : ''}`}
               aria-label={label}
             >
-              <Icon size={22} aria-hidden="true" />
-              {label === 'Configurações' ? 'Config.' : label}
+              <Icon size={20} aria-hidden="true" />
+              {label.split(' ')[0]}
             </NavLink>
           ))}
-          {/* Quick Voice Transcription button on mobile */}
           <button
             type="button"
             onClick={() => setIsTranscriptionOpen(prev => !prev)}
             className={`bottom-nav-item ${isTranscriptionOpen ? 'active' : ''}`}
             aria-label="Legendas de voz ao vivo"
-            style={{ color: isTranscriptionOpen ? '#4338ca' : undefined }}
           >
-            <Mic size={22} aria-hidden="true" />
+            <Mic size={20} aria-hidden="true" />
             Legenda
           </button>
         </div>

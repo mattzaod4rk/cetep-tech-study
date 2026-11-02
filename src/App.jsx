@@ -9,6 +9,7 @@ import DashboardPage from './pages/DashboardPage.jsx';
 import TasksPage from './pages/TasksPage.jsx';
 import AgendaPage from './pages/AgendaPage.jsx';
 import FocusPage from './pages/FocusPage.jsx';
+import MathPage from './pages/MathPage.jsx';
 import ProgressPage from './pages/ProgressPage.jsx';
 import SettingsPage from './pages/SettingsPage.jsx';
 import TeacherDashboard from './pages/teacher/TeacherDashboard.jsx';
@@ -44,6 +45,7 @@ function AppRoutes() {
         <Route path="/tasks" element={<TasksPage />} />
         <Route path="/agenda" element={<AgendaPage />} />
         <Route path="/focus" element={<FocusPage />} />
+        <Route path="/math" element={<MathPage />} />
         <Route path="/progress" element={<ProgressPage />} />
         <Route path="/settings" element={<SettingsPage />} />
       </Route>

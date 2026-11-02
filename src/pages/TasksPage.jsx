@@ -4,14 +4,13 @@ import { useAuth } from '../contexts/AuthContext.jsx';
 import { useApp } from '../contexts/AppContext.jsx';
 import * as DataService from '../services/DataService.js';
 import { formatDateBR, relativeDays, isOverdue } from '../utils/dates.js';
+import { SUBJECT_GROUPS } from '../utils/subjects.js';
 import TaskModal from '../components/tasks/TaskModal.jsx';
 import toast from 'react-hot-toast';
 
-const SUBJECTS = ['', 'Algoritmos', 'Redes', 'Hardware', 'S.O.', 'Banco de Dados', 'Web', 'Programação', 'Inglês Técnico', 'Outro'];
-
 export default function TasksPage() {
   const { user } = useAuth();
-  const { completeTaskWithReward, toggleSubtaskWithReward } = useApp();
+  const { completeTaskWithReward, toggleSubtaskWithReward, syncRevision } = useApp();
 
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -33,7 +32,7 @@ export default function TasksPage() {
     }
   }, [user.id]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(); }, [load, syncRevision]);
 
   const handleComplete = (taskId) => {
     // O XP é concedido pelo adapter apenas na 1ª conclusão da tarefa.
@@ -95,11 +94,14 @@ export default function TasksPage() {
     <div>
       <div className="page-header">
         <div className="page-header-left">
-          <h1>Tarefas</h1>
+          <div className="academic-kicker">
+            Gestão de Entregas & Exercícios Escolares
+          </div>
+          <h1>Atividades</h1>
           <p>{pending.length} pendente{pending.length !== 1 ? 's' : ''} · {completed.length} concluída{completed.length !== 1 ? 's' : ''}</p>
         </div>
         <button className="btn btn-primary" onClick={() => { setEditTask(null); setShowModal(true); }} id="tasks-new-btn">
-          <Plus size={18} /> Nova tarefa
+          <Plus size={16} /> Nova atividade
         </button>
       </div>
 
@@ -124,7 +126,12 @@ export default function TasksPage() {
         </select>
 
         <select className="form-select" style={{ width: 'auto', flex: '0 0 auto' }} value={filters.subject} onChange={e => setFilters(f => ({ ...f, subject: e.target.value }))} id="tasks-filter-subject">
-          {SUBJECTS.map(s => <option key={s} value={s}>{s || 'Qualquer matéria'}</option>)}
+          <option value="">Qualquer matéria</option>
+          {SUBJECT_GROUPS.map(group => (
+            <optgroup key={group.id} label={group.shortLabel}>
+              {group.subjects.map(s => <option key={s} value={s}>{s}</option>)}
+            </optgroup>
+          ))}
         </select>
       </div>
 

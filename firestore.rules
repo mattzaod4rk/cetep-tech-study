@@ -1,0 +1,407 @@
+rules_version = '2';
+
+// ===============================================================
+// Assumed Data Model — CETEP Tech Study (cetep-tech-study)
+// ===============================================================
+//
+// This security rules file enforces strict per-user isolation,
+// role-based pedagogical monitoring via server-side custom claims,
+// schema validation, and anti-privilege-escalation invariants.
+//
+// Collection: /users/{userId}
+// Document ID: Firebase Auth UID
+// Fields:
+//   - id: string (optional, <= 128 chars, immutable) - Legacy/internal ID
+//   - uid: string (optional, must match userId, immutable) - Auth UID
+//   - name: string (required, 1..120 chars) - Student display name
+//   - email: string (required, 3..254 chars) - Student email address (PII)
+//   - role: string (required, 'aluno' on create, immutable on update) - User role
+//   - photoURL: string|null (optional, <= 500 chars) - Avatar URL
+//   - emailVerified: bool (optional) - Email verification flag
+//   - authProviders: list (optional, <= 10 items) - Linked auth providers
+//   - migratedFromLocal: bool (optional) - LocalStorage migration marker
+//   - createdAt: timestamp|string (optional, immutable on update) - Creation time
+//   - updatedAt: timestamp|string (optional) - Last update time
+//
+// Subcollection: /users/{userId}/tasks/{taskId}
+// Fields:
+//   - id: string (optional, <= 128 chars)
+//   - title: string (required, 1..300 chars)
+//   - description: string (optional, <= 2000 chars)
+//   - subject: string (optional, <= 120 chars)
+//   - priority: string (optional, <= 30 chars)
+//   - dueDate: string|null (optional, <= 40 chars)
+//   - estimatedMinutes: number (optional, 0..1440)
+//   - subtasks: list (optional, <= 50 items)
+//   - status: string (required, in ['pending', 'completed'])
+//   - xpAwarded: bool (optional)
+//   - createdAt: timestamp|string (optional)
+//   - completedAt: timestamp|string|null (optional)
+//   - updatedAt: timestamp|string (optional)
+//
+// Subcollection: /users/{userId}/agenda/{eventId}
+// Fields:
+//   - id: string (optional, <= 128 chars)
+//   - title: string (required, 1..300 chars)
+//   - date: string (required, 8..30 chars)
+//   - time: string (optional, <= 20 chars)
+//   - type: string (optional, <= 50 chars)
+//   - subject: string (optional, <= 120 chars)
+//   - description: string (optional, <= 2000 chars)
+//   - notes: string (optional, <= 2000 chars)
+//   - createdAt: timestamp|string (optional)
+//   - updatedAt: timestamp|string (optional)
+//
+// Subcollection: /users/{userId}/focusSessions/{sessionId}
+// Fields:
+//   - id: string (optional, <= 128 chars)
+//   - sessionId: string (optional, <= 128 chars)
+//   - durationMinutes: number (required, 1..300)
+//   - plannedMinutes: number (optional, 1..300)
+//   - elapsedSeconds: number (optional, 0..18000)
+//   - completed: bool (optional)
+//   - subject: string (optional, <= 120 chars)
+//   - xpAwarded: bool (optional)
+//   - pointsEarned: number (optional, 0..100)
+//   - completedAt: timestamp|string|null (optional)
+//   - createdAt: timestamp|string (optional)
+//
+// Subcollection: /users/{userId}/appdata/{docId}
+// Allowed docIds: ['gamification', 'settings', 'weeklyPlan', 'studyProgress']
+//   - gamification: points (int >= 0), level (int 1..10), streakDays (int >= 0),
+//     bestStreak (int >= 0), streakShields (int 0..5), achievements (list <= 100),
+//     activeDates (list <= 1000), shieldUsedDates (list <= 500), lastActiveDate, updatedAt
+//   - settings: theme in ['light', 'dark', 'highcontrast', 'highcontrast-white'],
+//     fontSize in ['small', 'medium', 'large', 'xlarge', 'huge'],
+//     dyslexiaFont (bool), reducedMotion (bool), notifications (bool), updatedAt
+//   - weeklyPlan: seg, ter, qua, qui, sex, sab, dom, days, updatedAt
+//   - studyProgress: completedExercises (list <= 500), lastVisitedTab, updatedAt
+//
+// ===============================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    // Check if the user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Check if the authenticated user owns the resource path
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Check if the user has a server-assigned teacher/admin custom claim
+    // Custom claims can NEVER be self-assigned from the client SDK
+    function isStaff() {
+      return isAuthenticated() &&
+        (request.auth.token.role == 'professor' || request.auth.token.admin == true);
+    }
+
+    // Verify UID field hasn't been tampered with on create
+    function uidUnchanged(userId) {
+      return !('uid' in request.resource.data) ||
+        request.resource.data.uid == userId;
+    }
+
+    // Ensure UID field is not modified on update
+    function uidNotModified() {
+      return !('uid' in request.resource.data) ||
+        !('uid' in resource.data) ||
+        request.resource.data.uid == resource.data.uid;
+    }
+
+    // Ensure immutable creation timestamp is not modified on update
+    function createdAtUnchanged() {
+      return !('createdAt' in request.resource.data) ||
+        !('createdAt' in resource.data) ||
+        request.resource.data.createdAt == resource.data.createdAt;
+    }
+
+    // Validate that the document contains only the allowed fields
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    // Validate optional string (if present and non-null, must be string within length bounds)
+    function isValidOptionalString(data, field, minLen, maxLen) {
+      return !(field in data) ||
+        data[field] == null ||
+        (data[field] is string && data[field].size() >= minLen && data[field].size() <= maxLen);
+    }
+
+    // Validate optional boolean
+    function isValidOptionalBool(data, field) {
+      return !(field in data) ||
+        data[field] is bool;
+    }
+
+    // Validate optional number within range
+    function isValidOptionalNumber(data, field, minVal, maxVal) {
+      return !(field in data) ||
+        data[field] == null ||
+        (data[field] is number && data[field] >= minVal && data[field] <= maxVal);
+    }
+
+    // Validate optional timestamp or ISO date string
+    function isValidOptionalTimestampOrDateString(data, field) {
+      return !(field in data) ||
+        data[field] == null ||
+        data[field] is timestamp ||
+        (data[field] is string && data[field].size() <= 40);
+    }
+
+    // ===============================================================
+    // Domain Validators (Used in BOTH create and update rules)
+    // ===============================================================
+
+    function isValidUserProfile(data) {
+      return request.resource.data.keys().hasOnly([
+          'id', 'uid', 'name', 'email', 'role', 'photoURL',
+          'emailVerified', 'authProviders', 'migratedFromLocal',
+          'createdAt', 'updatedAt'
+        ]) &&
+        request.resource.data.name is string &&
+        request.resource.data.name.size() >= 1 &&
+        request.resource.data.name.size() <= 120 &&
+        request.resource.data.email is string &&
+        request.resource.data.email.size() >= 3 &&
+        request.resource.data.email.size() <= 254 &&
+        isValidOptionalString(data, 'id', 1, 128) &&
+        isValidOptionalString(data, 'uid', 1, 128) &&
+        isValidOptionalString(data, 'photoURL', 0, 500) &&
+        isValidOptionalBool(data, 'emailVerified') &&
+        isValidOptionalBool(data, 'migratedFromLocal') &&
+        (!('authProviders' in data) || (data.authProviders is list && data.authProviders.size() <= 10)) &&
+        isValidOptionalTimestampOrDateString(data, 'createdAt') &&
+        isValidOptionalTimestampOrDateString(data, 'updatedAt');
+    }
+
+    function isValidTask(data) {
+      return request.resource.data.keys().hasOnly([
+          'id', 'title', 'description', 'subject', 'priority', 'dueDate',
+          'deadline', 'estimatedMinutes', 'subtasks', 'status', 'xpAwarded',
+          'createdAt', 'completedAt', 'updatedAt'
+        ]) &&
+        request.resource.data.title is string &&
+        request.resource.data.title.size() >= 1 &&
+        request.resource.data.title.size() <= 300 &&
+        request.resource.data.status in ['pending', 'completed'] &&
+        (!('subtasks' in request.resource.data) || (request.resource.data.subtasks is list && request.resource.data.subtasks.size() <= 50)) &&
+        isValidOptionalString(data, 'id', 1, 128) &&
+        isValidOptionalString(data, 'description', 0, 2000) &&
+        isValidOptionalString(data, 'subject', 0, 120) &&
+        isValidOptionalString(data, 'priority', 0, 30) &&
+        isValidOptionalString(data, 'dueDate', 0, 40) &&
+        isValidOptionalString(data, 'deadline', 0, 40) &&
+        isValidOptionalNumber(data, 'estimatedMinutes', 0, 1440) &&
+        isValidOptionalBool(data, 'xpAwarded') &&
+        isValidOptionalTimestampOrDateString(data, 'createdAt') &&
+        isValidOptionalTimestampOrDateString(data, 'completedAt') &&
+        isValidOptionalTimestampOrDateString(data, 'updatedAt');
+    }
+
+    function isValidAgendaEvent(data) {
+      return request.resource.data.keys().hasOnly([
+          'id', 'title', 'date', 'time', 'type', 'priority', 'subject',
+          'description', 'notes', 'createdAt', 'updatedAt'
+        ]) &&
+        request.resource.data.title is string &&
+        request.resource.data.title.size() >= 1 &&
+        request.resource.data.title.size() <= 300 &&
+        request.resource.data.date is string &&
+        request.resource.data.date.size() >= 8 &&
+        request.resource.data.date.size() <= 30 &&
+        isValidOptionalString(data, 'id', 1, 128) &&
+        isValidOptionalString(data, 'time', 0, 20) &&
+        isValidOptionalString(data, 'type', 0, 50) &&
+        isValidOptionalString(data, 'priority', 0, 30) &&
+        isValidOptionalString(data, 'subject', 0, 120) &&
+        isValidOptionalString(data, 'description', 0, 2000) &&
+        isValidOptionalString(data, 'notes', 0, 2000) &&
+        isValidOptionalTimestampOrDateString(data, 'createdAt') &&
+        isValidOptionalTimestampOrDateString(data, 'updatedAt');
+    }
+
+    function isValidFocusSession(data) {
+      return request.resource.data.keys().hasOnly([
+          'id', 'sessionId', 'durationMinutes', 'plannedMinutes',
+          'elapsedSeconds', 'completed', 'subject', 'xpAwarded',
+          'pointsEarned', 'completedAt', 'createdAt'
+        ]) &&
+        request.resource.data.durationMinutes is number &&
+        request.resource.data.durationMinutes >= 1 &&
+        request.resource.data.durationMinutes <= 300 &&
+        (!('completed' in request.resource.data) || request.resource.data.completed is bool) &&
+        (!('pointsEarned' in request.resource.data) || (request.resource.data.pointsEarned is number && request.resource.data.pointsEarned >= 0 && request.resource.data.pointsEarned <= 100)) &&
+        isValidOptionalString(data, 'id', 1, 128) &&
+        isValidOptionalString(data, 'sessionId', 1, 128) &&
+        isValidOptionalNumber(data, 'plannedMinutes', 1, 300) &&
+        isValidOptionalNumber(data, 'elapsedSeconds', 0, 18000) &&
+        isValidOptionalString(data, 'subject', 0, 120) &&
+        isValidOptionalBool(data, 'xpAwarded') &&
+        isValidOptionalTimestampOrDateString(data, 'completedAt') &&
+        isValidOptionalTimestampOrDateString(data, 'createdAt');
+    }
+
+    function isValidGamificationAppData(data) {
+      return (request.resource.data.points is int || request.resource.data.points is number) &&
+        request.resource.data.points >= 0 &&
+        (request.resource.data.level is int || request.resource.data.level is number) &&
+        request.resource.data.level >= 1 &&
+        request.resource.data.level <= 10 &&
+        (request.resource.data.streakDays is int || request.resource.data.streakDays is number) &&
+        request.resource.data.streakDays >= 0 &&
+        (request.resource.data.bestStreak is int || request.resource.data.bestStreak is number) &&
+        request.resource.data.bestStreak >= 0 &&
+        (request.resource.data.streakShields is int || request.resource.data.streakShields is number) &&
+        request.resource.data.streakShields >= 0 &&
+        request.resource.data.streakShields <= 5 &&
+        request.resource.data.achievements is list &&
+        request.resource.data.achievements.size() <= 100 &&
+        request.resource.data.activeDates is list &&
+        request.resource.data.activeDates.size() <= 1000 &&
+        request.resource.data.shieldUsedDates is list &&
+        request.resource.data.shieldUsedDates.size() <= 500 &&
+        request.resource.data.keys().hasOnly([
+          'points', 'level', 'achievements', 'lastActiveDate',
+          'streakDays', 'bestStreak', 'streakShields',
+          'activeDates', 'shieldUsedDates', 'updatedAt'
+        ]) &&
+        isValidOptionalString(data, 'lastActiveDate', 0, 30) &&
+        isValidOptionalTimestampOrDateString(data, 'updatedAt');
+    }
+
+    function isValidSettingsAppData(data) {
+      return request.resource.data.theme in ['light', 'dark', 'highcontrast', 'highcontrast-white'] &&
+        request.resource.data.fontSize in ['small', 'medium', 'large', 'xlarge', 'huge'] &&
+        request.resource.data.keys().hasOnly([
+          'theme', 'fontSize', 'dyslexiaFont', 'reducedMotion', 'notifications', 'updatedAt'
+        ]) &&
+        isValidOptionalBool(data, 'dyslexiaFont') &&
+        isValidOptionalBool(data, 'reducedMotion') &&
+        isValidOptionalBool(data, 'notifications') &&
+        isValidOptionalTimestampOrDateString(data, 'updatedAt');
+    }
+
+    function isValidWeeklyPlanAppData(data) {
+      return request.resource.data.keys().hasOnly([
+          '0', '1', '2', '3', '4', '5', '6',
+          'seg', 'ter', 'qua', 'qui', 'sex', 'sab', 'dom', 'days', 'updatedAt'
+        ]) &&
+        (!('0' in data) || data['0'] is map) &&
+        (!('1' in data) || data['1'] is map) &&
+        (!('2' in data) || data['2'] is map) &&
+        (!('3' in data) || data['3'] is map) &&
+        (!('4' in data) || data['4'] is map) &&
+        (!('5' in data) || data['5'] is map) &&
+        (!('6' in data) || data['6'] is map) &&
+        (!('seg' in data) || (data.seg is list && data.seg.size() <= 30) || data.seg is map) &&
+        (!('ter' in data) || (data.ter is list && data.ter.size() <= 30) || data.ter is map) &&
+        (!('qua' in data) || (data.qua is list && data.qua.size() <= 30) || data.qua is map) &&
+        (!('qui' in data) || (data.qui is list && data.qui.size() <= 30) || data.qui is map) &&
+        (!('sex' in data) || (data.sex is list && data.sex.size() <= 30) || data.sex is map) &&
+        (!('sab' in data) || (data.sab is list && data.sab.size() <= 30) || data.sab is map) &&
+        (!('dom' in data) || (data.dom is list && data.dom.size() <= 30) || data.dom is map) &&
+        (!('days' in data) || data.days is map) &&
+        isValidOptionalTimestampOrDateString(data, 'updatedAt');
+    }
+
+    function isValidStudyProgressAppData(data) {
+      return request.resource.data.completedExercises is list &&
+        request.resource.data.completedExercises.size() <= 500 &&
+        request.resource.data.keys().hasOnly([
+          'completedExercises', 'lastVisitedTab', 'updatedAt'
+        ]) &&
+        isValidOptionalString(data, 'lastVisitedTab', 0, 100) &&
+        isValidOptionalTimestampOrDateString(data, 'updatedAt');
+    }
+
+    function isValidAppData(docId, data) {
+      return (docId == 'gamification' && isValidGamificationAppData(data)) ||
+        (docId == 'settings' && isValidSettingsAppData(data)) ||
+        (docId == 'weeklyPlan' && isValidWeeklyPlanAppData(data)) ||
+        (docId == 'studyProgress' && isValidStudyProgressAppData(data));
+    }
+
+    // ===============================================================
+    // Collection Rules: /users/{userId}
+    // ===============================================================
+
+    match /users/{userId} {
+      // Students can only read their own profile; verified teachers/admins can read for pedagogical monitoring
+      allow read: if isOwner(userId) || isStaff();
+
+      // Public sign-up MUST set role == 'aluno'; prevents self-elevation to 'professor' or 'admin'
+      allow create: if isOwner(userId) &&
+        request.resource.data.role == 'aluno' &&
+        uidUnchanged(userId) &&
+        isValidUserProfile(request.resource.data);
+
+      // Role is strictly immutable from client updates; prevents privilege escalation
+      allow update: if isOwner(userId) &&
+        request.resource.data.role == resource.data.role &&
+        uidNotModified() &&
+        createdAtUnchanged() &&
+        isValidUserProfile(request.resource.data);
+
+      // Students can delete their own profile document
+      allow delete: if isOwner(userId);
+
+      // ---------------------------------------------------------------
+      // Subcollection: /users/{userId}/tasks/{taskId}
+      // ---------------------------------------------------------------
+      match /tasks/{taskId} {
+        allow read: if isOwner(userId) || isStaff();
+        allow create: if isOwner(userId) && isValidTask(request.resource.data);
+        allow update: if isOwner(userId) && createdAtUnchanged() && isValidTask(request.resource.data);
+        allow delete: if isOwner(userId);
+      }
+
+      // ---------------------------------------------------------------
+      // Subcollection: /users/{userId}/agenda/{eventId}
+      // ---------------------------------------------------------------
+      match /agenda/{eventId} {
+        allow read: if isOwner(userId) || isStaff();
+        allow create: if isOwner(userId) && isValidAgendaEvent(request.resource.data);
+        allow update: if isOwner(userId) && createdAtUnchanged() && isValidAgendaEvent(request.resource.data);
+        allow delete: if isOwner(userId);
+      }
+
+      // ---------------------------------------------------------------
+      // Subcollection: /users/{userId}/focusSessions/{sessionId}
+      // ---------------------------------------------------------------
+      match /focusSessions/{sessionId} {
+        allow read: if isOwner(userId) || isStaff();
+        allow create: if isOwner(userId) && isValidFocusSession(request.resource.data);
+        allow update: if isOwner(userId) && createdAtUnchanged() && isValidFocusSession(request.resource.data);
+        allow delete: if isOwner(userId);
+      }
+
+      // ---------------------------------------------------------------
+      // Subcollection: /users/{userId}/appdata/{docId}
+      // ---------------------------------------------------------------
+      match /appdata/{docId} {
+        allow read: if (isOwner(userId) || isStaff()) &&
+          docId in ['gamification', 'settings', 'weeklyPlan', 'studyProgress'];
+        allow create, update: if isOwner(userId) &&
+          docId in ['gamification', 'settings', 'weeklyPlan', 'studyProgress'] &&
+          isValidAppData(docId, request.resource.data);
+        allow delete: if isOwner(userId) &&
+          docId in ['gamification', 'settings', 'weeklyPlan', 'studyProgress'];
+      }
+    }
+
+    // ===============================================================
+    // Default Deny — Reject all unmatched paths
+    // ===============================================================
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

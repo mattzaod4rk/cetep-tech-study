@@ -117,9 +117,24 @@ export function formatTimer(totalSeconds) {
 }
 
 /**
- * Short weekday names in Portuguese
+ * Short and full weekday names in Portuguese
  */
 export const SHORT_WEEKDAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+export const WEEKDAYS = [
+  'Domingo',
+  'Segunda-feira',
+  'Terça-feira',
+  'Quarta-feira',
+  'Quinta-feira',
+  'Sexta-feira',
+  'Sábado',
+];
+
+export function getDayShortName(dateStr) {
+  if (!dateStr) return '';
+  return SHORT_WEEKDAYS[parseLocalDate(dateStr).getDay()] || '';
+}
+
 export const MONTH_NAMES = [
   'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
   'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro',
