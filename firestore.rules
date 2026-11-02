@@ -5,77 +5,48 @@ rules_version = '2';
 // ===============================================================
 //
 // This security rules file enforces strict per-user isolation,
-// role-based pedagogical monitoring via server-side custom claims,
-// schema validation, and anti-privilege-escalation invariants.
+// 3-tier role-based access control ('aluno', 'professor', 'admin'),
+// class-scoped teacher authorization, server-controlled teacher
+// invites, schema validation, and anti-privilege-escalation invariants.
 //
 // Collection: /users/{userId}
 // Document ID: Firebase Auth UID
 // Fields:
 //   - id: string (optional, <= 128 chars, immutable) - Legacy/internal ID
 //   - uid: string (optional, must match userId, immutable) - Auth UID
-//   - name: string (required, 1..120 chars) - Student display name
-//   - email: string (required, 3..254 chars) - Student email address (PII)
-//   - role: string (required, 'aluno' on create, immutable on update) - User role
+//   - name: string (required, 1..120 chars) - User display name
+//   - email: string (required, 3..254 chars) - User email address (PII)
+//   - role: string (required, 'aluno' on public create, immutable from student client) - User role
 //   - photoURL: string|null (optional, <= 500 chars) - Avatar URL
 //   - emailVerified: bool (optional) - Email verification flag
 //   - authProviders: list (optional, <= 10 items) - Linked auth providers
 //   - migratedFromLocal: bool (optional) - LocalStorage migration marker
+//   - assignedClassIds: list (optional, <= 50 items) - Classes assigned to teacher
+//   - enrolledClassIds: list (optional, <= 50 items) - Classes student is enrolled in
 //   - createdAt: timestamp|string (optional, immutable on update) - Creation time
 //   - updatedAt: timestamp|string (optional) - Last update time
 //
-// Subcollection: /users/{userId}/tasks/{taskId}
-// Fields:
-//   - id: string (optional, <= 128 chars)
-//   - title: string (required, 1..300 chars)
-//   - description: string (optional, <= 2000 chars)
-//   - subject: string (optional, <= 120 chars)
-//   - priority: string (optional, <= 30 chars)
-//   - dueDate: string|null (optional, <= 40 chars)
-//   - estimatedMinutes: number (optional, 0..1440)
-//   - subtasks: list (optional, <= 50 items)
-//   - status: string (required, in ['pending', 'completed'])
-//   - xpAwarded: bool (optional)
-//   - createdAt: timestamp|string (optional)
-//   - completedAt: timestamp|string|null (optional)
-//   - updatedAt: timestamp|string (optional)
+// Subcollections under /users/{userId}:
+//   - /tasks/{taskId}
+//   - /agenda/{eventId}
+//   - /focusSessions/{sessionId}
+//   - /appdata/{docId} ('gamification', 'settings', 'weeklyPlan', 'studyProgress')
 //
-// Subcollection: /users/{userId}/agenda/{eventId}
+// Collection: /classes/{classId}
 // Fields:
-//   - id: string (optional, <= 128 chars)
-//   - title: string (required, 1..300 chars)
-//   - date: string (required, 8..30 chars)
-//   - time: string (optional, <= 20 chars)
-//   - type: string (optional, <= 50 chars)
-//   - subject: string (optional, <= 120 chars)
-//   - description: string (optional, <= 2000 chars)
-//   - notes: string (optional, <= 2000 chars)
-//   - createdAt: timestamp|string (optional)
-//   - updatedAt: timestamp|string (optional)
+//   - id, name (1..150), code, course, shift, year, description,
+//     subjects (list <= 40), teacherIds (list <= 30), teacherNames (list <= 30),
+//     studentIds (list <= 200), createdBy, createdAt, updatedAt
+// Subcollections under /classes/{classId}:
+//   - /contents/{contentId}
+//   - /activities/{activityId}
+//   - /announcements/{announcementId}
 //
-// Subcollection: /users/{userId}/focusSessions/{sessionId}
+// Collection: /teacherInvites/{inviteId}
 // Fields:
-//   - id: string (optional, <= 128 chars)
-//   - sessionId: string (optional, <= 128 chars)
-//   - durationMinutes: number (required, 1..300)
-//   - plannedMinutes: number (optional, 1..300)
-//   - elapsedSeconds: number (optional, 0..18000)
-//   - completed: bool (optional)
-//   - subject: string (optional, <= 120 chars)
-//   - xpAwarded: bool (optional)
-//   - pointsEarned: number (optional, 0..100)
-//   - completedAt: timestamp|string|null (optional)
-//   - createdAt: timestamp|string (optional)
-//
-// Subcollection: /users/{userId}/appdata/{docId}
-// Allowed docIds: ['gamification', 'settings', 'weeklyPlan', 'studyProgress']
-//   - gamification: points (int >= 0), level (int 1..10), streakDays (int >= 0),
-//     bestStreak (int >= 0), streakShields (int 0..5), achievements (list <= 100),
-//     activeDates (list <= 1000), shieldUsedDates (list <= 500), lastActiveDate, updatedAt
-//   - settings: theme in ['light', 'dark', 'highcontrast', 'highcontrast-white'],
-//     fontSize in ['small', 'medium', 'large', 'xlarge', 'huge'],
-//     dyslexiaFont (bool), reducedMotion (bool), notifications (bool), updatedAt
-//   - weeklyPlan: seg, ter, qua, qui, sex, sab, dom, days, updatedAt
-//   - studyProgress: completedExercises (list <= 500), lastVisitedTab, updatedAt
+//   - id, codePreview, codeHash, targetEmail (3..254), assignedClassIds (list <= 50),
+//     createdBy, createdByName, expiresAt, used, usedByUid, usedAt,
+//     revoked, createdAt, updatedAt
 //
 // ===============================================================
 
@@ -96,11 +67,66 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
-    // Check if the user has a server-assigned teacher/admin custom claim
-    // Custom claims can NEVER be self-assigned from the client SDK
-    function isStaff() {
+    // Read the role stored on the authenticated user's profile document
+    // (Protected by anti-privilege-escalation rules on /users/{userId})
+    function userDocRole() {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role
+        : 'aluno';
+    }
+
+    // Check if the user has Admin authority (custom claim or verified admin profile)
+    function isAdmin() {
       return isAuthenticated() &&
-        (request.auth.token.role == 'professor' || request.auth.token.admin == true);
+        (request.auth.token.admin == true ||
+         request.auth.token.role == 'admin' ||
+         userDocRole() == 'admin');
+    }
+
+    // Check if the user has Teacher ('professor') authority
+    function isTeacher() {
+      return isAuthenticated() &&
+        (request.auth.token.role == 'professor' ||
+         userDocRole() == 'professor');
+    }
+
+    // Check if the user is a Teacher or Admin (pedagogical staff)
+    function isStaff() {
+      return isAdmin() || isTeacher();
+    }
+
+    // Check if the authenticated teacher is assigned to a class document's data
+    function isAssignedTeacherOfClassData(classData) {
+      return isTeacher() &&
+        ('teacherIds' in classData) &&
+        (request.auth.uid in classData.teacherIds);
+    }
+
+    // Check if the authenticated student is enrolled in a class document's data
+    function isEnrolledStudentOfClassData(classData) {
+      return isAuthenticated() &&
+        ('studentIds' in classData) &&
+        (request.auth.uid in classData.studentIds);
+    }
+
+    // Check if the authenticated teacher is assigned to a specific class by classId
+    function isClassTeacher(classId) {
+      return isTeacher() &&
+        exists(/databases/$(database)/documents/classes/$(classId)) &&
+        (request.auth.uid in get(/databases/$(database)/documents/classes/$(classId)).data.teacherIds);
+    }
+
+    // Check if the authenticated user can manage a specific class (Admin or assigned Teacher)
+    function canManageClass(classId) {
+      return isAdmin() || isClassTeacher(classId);
+    }
+
+    // Check if the authenticated user can read a specific class (Admin, assigned Teacher, or enrolled Student)
+    function canReadClass(classId) {
+      return canManageClass(classId) ||
+        (isAuthenticated() &&
+         exists(/databases/$(database)/documents/classes/$(classId)) &&
+         (request.auth.uid in get(/databases/$(database)/documents/classes/$(classId)).data.studentIds));
     }
 
     // Verify UID field hasn't been tampered with on create
@@ -126,6 +152,11 @@ service cloud.firestore {
     // Validate that the document contains only the allowed fields
     function hasOnlyAllowedFields(fields) {
       return request.resource.data.keys().hasOnly(fields);
+    }
+
+    // Validate required string within length bounds
+    function isValidString(val, minLen, maxLen) {
+      return val is string && val.size() >= minLen && val.size() <= maxLen;
     }
 
     // Validate optional string (if present and non-null, must be string within length bounds)
@@ -164,6 +195,7 @@ service cloud.firestore {
       return request.resource.data.keys().hasOnly([
           'id', 'uid', 'name', 'email', 'role', 'photoURL',
           'emailVerified', 'authProviders', 'migratedFromLocal',
+          'assignedClassIds', 'enrolledClassIds',
           'createdAt', 'updatedAt'
         ]) &&
         request.resource.data.name is string &&
@@ -178,6 +210,8 @@ service cloud.firestore {
         isValidOptionalBool(data, 'emailVerified') &&
         isValidOptionalBool(data, 'migratedFromLocal') &&
         (!('authProviders' in data) || (data.authProviders is list && data.authProviders.size() <= 10)) &&
+        (!('assignedClassIds' in data) || (data.assignedClassIds is list && data.assignedClassIds.size() <= 50)) &&
+        (!('enrolledClassIds' in data) || (data.enrolledClassIds is list && data.enrolledClassIds.size() <= 50)) &&
         isValidOptionalTimestampOrDateString(data, 'createdAt') &&
         isValidOptionalTimestampOrDateString(data, 'updatedAt');
     }
@@ -199,7 +233,7 @@ service cloud.firestore {
         isValidOptionalString(data, 'priority', 0, 30) &&
         isValidOptionalString(data, 'dueDate', 0, 40) &&
         isValidOptionalString(data, 'deadline', 0, 40) &&
-        isValidOptionalNumber(data, 'estimatedMinutes', 0, 1440) &&
+        (!( 'estimatedMinutes' in data ) || data.estimatedMinutes == null || (data.estimatedMinutes is number && data.estimatedMinutes >= 0 && data.estimatedMinutes <= 1440)) &&
         isValidOptionalBool(data, 'xpAwarded') &&
         isValidOptionalTimestampOrDateString(data, 'createdAt') &&
         isValidOptionalTimestampOrDateString(data, 'completedAt') &&
@@ -241,8 +275,8 @@ service cloud.firestore {
         (!('pointsEarned' in request.resource.data) || (request.resource.data.pointsEarned is number && request.resource.data.pointsEarned >= 0 && request.resource.data.pointsEarned <= 100)) &&
         isValidOptionalString(data, 'id', 1, 128) &&
         isValidOptionalString(data, 'sessionId', 1, 128) &&
-        isValidOptionalNumber(data, 'plannedMinutes', 1, 300) &&
-        isValidOptionalNumber(data, 'elapsedSeconds', 0, 18000) &&
+        (!('plannedMinutes' in data) || data.plannedMinutes == null || (data.plannedMinutes is number && data.plannedMinutes >= 1 && data.plannedMinutes <= 300)) &&
+        (!('elapsedSeconds' in data) || data.elapsedSeconds == null || (data.elapsedSeconds is number && data.elapsedSeconds >= 0 && data.elapsedSeconds <= 18000)) &&
         isValidOptionalString(data, 'subject', 0, 120) &&
         isValidOptionalBool(data, 'xpAwarded') &&
         isValidOptionalTimestampOrDateString(data, 'completedAt') &&
@@ -329,29 +363,161 @@ service cloud.firestore {
         (docId == 'studyProgress' && isValidStudyProgressAppData(data));
     }
 
+    function isValidClass(data) {
+      return request.resource.data.keys().hasOnly([
+          'id', 'name', 'code', 'course', 'shift', 'year', 'description',
+          'subjects', 'teacherIds', 'teacherNames', 'studentIds',
+          'createdBy', 'createdAt', 'updatedAt'
+        ]) &&
+        data.name is string &&
+        data.name.size() >= 1 &&
+        data.name.size() <= 150 &&
+        data.teacherIds is list &&
+        data.teacherIds.size() <= 30 &&
+        data.studentIds is list &&
+        data.studentIds.size() <= 200 &&
+        (!('subjects' in data) || (data.subjects is list && data.subjects.size() <= 40)) &&
+        (!('teacherNames' in data) || (data.teacherNames is list && data.teacherNames.size() <= 30)) &&
+        isValidOptionalString(data, 'id', 1, 128) &&
+        isValidOptionalString(data, 'code', 0, 40) &&
+        isValidOptionalString(data, 'course', 0, 120) &&
+        isValidOptionalString(data, 'shift', 0, 40) &&
+        isValidOptionalString(data, 'year', 0, 20) &&
+        isValidOptionalString(data, 'description', 0, 1000) &&
+        isValidOptionalString(data, 'createdBy', 0, 128) &&
+        isValidOptionalTimestampOrDateString(data, 'createdAt') &&
+        isValidOptionalTimestampOrDateString(data, 'updatedAt');
+    }
+
+    function isValidClassContent(data) {
+      return request.resource.data.keys().hasOnly([
+          'id', 'classId', 'title', 'subject', 'description',
+          'resourceUrl', 'authorId', 'authorName', 'createdAt', 'updatedAt'
+        ]) &&
+        data.title is string &&
+        data.title.size() >= 1 &&
+        data.title.size() <= 200 &&
+        data.subject is string &&
+        data.subject.size() >= 1 &&
+        data.subject.size() <= 120 &&
+        isValidOptionalString(data, 'id', 1, 128) &&
+        isValidOptionalString(data, 'classId', 1, 128) &&
+        isValidOptionalString(data, 'description', 0, 3000) &&
+        isValidOptionalString(data, 'resourceUrl', 0, 1000) &&
+        isValidOptionalString(data, 'authorId', 0, 128) &&
+        isValidOptionalString(data, 'authorName', 0, 120) &&
+        isValidOptionalTimestampOrDateString(data, 'createdAt') &&
+        isValidOptionalTimestampOrDateString(data, 'updatedAt');
+    }
+
+    function isValidClassActivity(data) {
+      return request.resource.data.keys().hasOnly([
+          'id', 'classId', 'title', 'subject', 'type', 'dueDate',
+          'points', 'description', 'authorId', 'authorName', 'createdAt', 'updatedAt'
+        ]) &&
+        data.title is string &&
+        data.title.size() >= 1 &&
+        data.title.size() <= 200 &&
+        data.subject is string &&
+        data.subject.size() >= 1 &&
+        data.subject.size() <= 120 &&
+        isValidOptionalString(data, 'id', 1, 128) &&
+        isValidOptionalString(data, 'classId', 1, 128) &&
+        isValidOptionalString(data, 'type', 0, 50) &&
+        isValidOptionalString(data, 'dueDate', 0, 40) &&
+        (!('points' in data) || data.points == null || (data.points is number && data.points >= 0 && data.points <= 1000)) &&
+        isValidOptionalString(data, 'description', 0, 3000) &&
+        isValidOptionalString(data, 'authorId', 0, 128) &&
+        isValidOptionalString(data, 'authorName', 0, 120) &&
+        isValidOptionalTimestampOrDateString(data, 'createdAt') &&
+        isValidOptionalTimestampOrDateString(data, 'updatedAt');
+    }
+
+    function isValidClassAnnouncement(data) {
+      return request.resource.data.keys().hasOnly([
+          'id', 'classId', 'title', 'message', 'priority',
+          'authorId', 'authorName', 'createdAt', 'updatedAt'
+        ]) &&
+        data.title is string &&
+        data.title.size() >= 1 &&
+        data.title.size() <= 200 &&
+        data.message is string &&
+        data.message.size() >= 1 &&
+        data.message.size() <= 3000 &&
+        isValidOptionalString(data, 'id', 1, 128) &&
+        isValidOptionalString(data, 'classId', 1, 128) &&
+        isValidOptionalString(data, 'priority', 0, 30) &&
+        isValidOptionalString(data, 'authorId', 0, 128) &&
+        isValidOptionalString(data, 'authorName', 0, 120) &&
+        isValidOptionalTimestampOrDateString(data, 'createdAt') &&
+        isValidOptionalTimestampOrDateString(data, 'updatedAt');
+    }
+
+    function isValidTeacherInvite(data) {
+      return request.resource.data.keys().hasOnly([
+          'id', 'codePreview', 'codeHash', 'targetEmail', 'assignedClassIds',
+          'createdBy', 'createdByName', 'expiresAt', 'used', 'usedByUid',
+          'usedAt', 'revoked', 'createdAt', 'updatedAt'
+        ]) &&
+        data.targetEmail is string &&
+        data.targetEmail.size() >= 3 &&
+        data.targetEmail.size() <= 254 &&
+        isValidOptionalString(data, 'id', 1, 128) &&
+        isValidOptionalString(data, 'codePreview', 0, 40) &&
+        isValidOptionalString(data, 'codeHash', 0, 256) &&
+        (!('assignedClassIds' in data) || (data.assignedClassIds is list && data.assignedClassIds.size() <= 50)) &&
+        isValidOptionalString(data, 'createdBy', 0, 128) &&
+        isValidOptionalString(data, 'createdByName', 0, 120) &&
+        isValidOptionalBool(data, 'used') &&
+        isValidOptionalBool(data, 'revoked') &&
+        isValidOptionalString(data, 'usedByUid', 0, 128) &&
+        isValidOptionalTimestampOrDateString(data, 'expiresAt') &&
+        isValidOptionalTimestampOrDateString(data, 'usedAt') &&
+        isValidOptionalTimestampOrDateString(data, 'createdAt') &&
+        isValidOptionalTimestampOrDateString(data, 'updatedAt');
+    }
+
     // ===============================================================
     // Collection Rules: /users/{userId}
     // ===============================================================
 
     match /users/{userId} {
-      // Students can only read their own profile; verified teachers/admins can read for pedagogical monitoring
-      allow read: if isOwner(userId) || isStaff();
+      // Students can only get their own profile; verified teachers/admins can get individual profiles;
+      // Unrestricted collection listing is restricted strictly to Admins (teachers search students via Admin SDK endpoint)
+      allow get: if isOwner(userId) || isStaff();
+      allow list: if isAdmin();
 
-      // Public sign-up MUST set role == 'aluno'; prevents self-elevation to 'professor' or 'admin'
-      allow create: if isOwner(userId) &&
+      // Public sign-up MUST set role == 'aluno' and empty assignedClassIds;
+      // Only Admins can directly create 'professor' or 'admin' user profiles
+      allow create: if (isOwner(userId) &&
         request.resource.data.role == 'aluno' &&
+        (!('assignedClassIds' in request.resource.data) || request.resource.data.assignedClassIds.size() == 0) &&
         uidUnchanged(userId) &&
-        isValidUserProfile(request.resource.data);
+        isValidUserProfile(request.resource.data)) ||
+        (isAdmin() &&
+         request.resource.data.role in ['aluno', 'professor', 'admin'] &&
+         isValidUserProfile(request.resource.data));
 
-      // Role is strictly immutable from client updates; prevents privilege escalation
-      allow update: if isOwner(userId) &&
+      // Role and assignedClassIds are strictly immutable from student/teacher self-updates;
+      // Admins can manage roles & class assignments; Teachers can update enrolledClassIds on student enrollment
+      allow update: if (isOwner(userId) &&
         request.resource.data.role == resource.data.role &&
+        (!('assignedClassIds' in request.resource.data) ||
+         ('assignedClassIds' in resource.data && request.resource.data.assignedClassIds == resource.data.assignedClassIds)) &&
         uidNotModified() &&
         createdAtUnchanged() &&
-        isValidUserProfile(request.resource.data);
+        isValidUserProfile(request.resource.data)) ||
+        (isAdmin() &&
+         request.resource.data.role in ['aluno', 'professor', 'admin'] &&
+         uidNotModified() &&
+         isValidUserProfile(request.resource.data)) ||
+        (isTeacher() &&
+         request.resource.data.role == resource.data.role &&
+         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['enrolledClassIds', 'updatedAt']) &&
+         isValidUserProfile(request.resource.data));
 
-      // Students can delete their own profile document
-      allow delete: if isOwner(userId);
+      // Students can delete their own profile; Admins can delete accounts
+      allow delete: if isOwner(userId) || isAdmin();
 
       // ---------------------------------------------------------------
       // Subcollection: /users/{userId}/tasks/{taskId}
@@ -395,6 +561,77 @@ service cloud.firestore {
         allow delete: if isOwner(userId) &&
           docId in ['gamification', 'settings', 'weeklyPlan', 'studyProgress'];
       }
+    }
+
+    // ===============================================================
+    // Collection Rules: /classes/{classId}
+    // ===============================================================
+
+    match /classes/{classId} {
+      // Admins can read all classes; Teachers can read ONLY assigned classes; Students can read ONLY enrolled classes
+      allow read: if isAdmin() ||
+        isAssignedTeacherOfClassData(resource.data) ||
+        isEnrolledStudentOfClassData(resource.data);
+
+      // Only Admins can create or delete classes
+      allow create: if isAdmin() && isValidClass(request.resource.data);
+      allow delete: if isAdmin();
+
+      // Admins can update any class field; Assigned Teachers can update class metadata/students but CANNOT modify teacherIds
+      allow update: if (isAdmin() && isValidClass(request.resource.data)) ||
+        (isAssignedTeacherOfClassData(resource.data) &&
+         request.resource.data.teacherIds == resource.data.teacherIds &&
+         isValidClass(request.resource.data));
+
+      // ---------------------------------------------------------------
+      // Subcollection: /classes/{classId}/contents/{contentId}
+      // ---------------------------------------------------------------
+      match /contents/{contentId} {
+        allow read: if canReadClass(classId);
+        allow create, update: if canManageClass(classId) && isValidClassContent(request.resource.data);
+        allow delete: if canManageClass(classId);
+      }
+
+      // ---------------------------------------------------------------
+      // Subcollection: /classes/{classId}/activities/{activityId}
+      // ---------------------------------------------------------------
+      match /activities/{activityId} {
+        allow read: if canReadClass(classId);
+        allow create, update: if canManageClass(classId) && isValidClassActivity(request.resource.data);
+        allow delete: if canManageClass(classId);
+      }
+
+      // ---------------------------------------------------------------
+      // Subcollection: /classes/{classId}/announcements/{announcementId}
+      // ---------------------------------------------------------------
+      match /announcements/{announcementId} {
+        allow read: if canReadClass(classId);
+        allow create, update: if canManageClass(classId) && isValidClassAnnouncement(request.resource.data);
+        allow delete: if canManageClass(classId);
+      }
+
+      // ---------------------------------------------------------------
+      // Subcollection: /classes/{classId}/auditLogs/{logId}
+      // ---------------------------------------------------------------
+      match /auditLogs/{logId} {
+        allow get, list: if isAdmin() || isClassTeacher(classId);
+        allow create: if (isAdmin() || isClassTeacher(classId)) &&
+          request.resource.data.classId == classId &&
+          isValidString(request.resource.data.action, 1, 80) &&
+          isValidString(request.resource.data.actorUid, 1, 128) &&
+          request.resource.data.actorUid == request.auth.uid;
+        allow update, delete: if false;
+      }
+    }
+
+    // ===============================================================
+    // Collection Rules: /teacherInvites/{inviteId}
+    // ===============================================================
+
+    match /teacherInvites/{inviteId} {
+      // Strictly Admin-only; students and teachers cannot read or write invites directly from client
+      allow read, delete: if isAdmin();
+      allow create, update: if isAdmin() && isValidTeacherInvite(request.resource.data);
     }
 
     // ===============================================================

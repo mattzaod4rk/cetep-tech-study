@@ -338,3 +338,233 @@ test('Migração Beta -> Firebase: importa sem senhas antigas, impede duplicatas
   assert.equal(DS.getLegacyLocalAccounts(firebaseUid).length, 0);
 });
 
+// ── PASSO 6: RBAC (Aluno, Professor, Admin) e Painel Docente Real ────────────
+const TS = await import('../src/services/TeacherService.js');
+const { executeSecureClassStudentOperation } = await import('../api/class-students.js');
+
+test('RBAC: Aluno é bloqueado em todas as operações docentes, administrativas e de matrícula', async () => {
+  const studentUser = { uid: 'uid-aluno-1', name: 'Aluno CETEP', email: 'aluno@cetep.ba.gov.br', role: 'aluno' };
+
+  await assert.rejects(() => TS.getAuthorizedClasses(studentUser), /Acesso negado/);
+  await assert.rejects(() => TS.createClass(studentUser, { name: 'Turma Pirata' }), /Acesso negado/);
+  await assert.rejects(() => TS.getAllRegisteredUsers(studentUser), /Acesso negado/);
+  await assert.rejects(() => TS.updateUserRoleByAdmin(studentUser, 'uid-aluno-1', 'admin'), /Acesso negado/);
+  await assert.rejects(() => TS.createTeacherInviteByAdmin(studentUser, { targetEmail: 'x@y.com' }), /Acesso negado/);
+  await assert.rejects(() => TS.searchStudentsForClass(studentUser, 'turma-1', 'ana'), /Acesso negado/);
+  await assert.rejects(() => TS.addStudentsToClass(studentUser, 'turma-1', ['uid-aluno-1']), /Acesso negado/);
+});
+
+test('RBAC: Admin gerencia turmas, promove professor, gera convites com hash e Professor acessa apenas suas turmas atribuídas', async () => {
+  const adminUser = { uid: 'uid-admin-1', name: 'Coordenador Admin', email: 'admin@cetep.ba.gov.br', role: 'admin' };
+  const profA = { uid: 'uid-prof-a', name: 'Prof. Informática', email: 'profa@cetep.ba.gov.br', role: 'professor' };
+  const profB = { uid: 'uid-prof-b', name: 'Prof. Matemática', email: 'profb@cetep.ba.gov.br', role: 'professor' };
+  const profSemTurma = { uid: 'uid-prof-sem-turma', name: 'Prof. Novo', email: 'profnovo@cetep.ba.gov.br', role: 'professor' };
+  const student1 = await DS.register({ name: 'Estudante Turma A', email: 'est1@cetep.ba.gov.br', password: '123' });
+
+  // Admin cria duas turmas: uma atribuída ao Prof A e outra ao Prof B
+  const classA = await TS.createClass(adminUser, {
+    name: '3º Ano Informática M1',
+    course: 'Técnico em Informática',
+    shift: 'Matutino',
+    subjects: ['Banco de Dados', 'Engenharia de Software'],
+    teacherIds: [profA.uid],
+    studentIds: [student1.id],
+  });
+
+  const classB = await TS.createClass(adminUser, {
+    name: '1º Ano Informática V1',
+    course: 'Técnico em Informática',
+    shift: 'Vespertino',
+    subjects: ['Matemática e suas Tecnologias'],
+    teacherIds: [profB.uid],
+    studentIds: [],
+  });
+
+  // 1) Professor sem turma atribuída recebe lista vazia []
+  const emptyClasses = await TS.getAuthorizedClasses(profSemTurma);
+  assert.equal(emptyClasses.length, 0);
+
+  // 2) Professor com turma atribuída visualiza SOMENTE a sua turma (Turma A)
+  const profAClasses = await TS.getAuthorizedClasses(profA);
+  assert.equal(profAClasses.length, 1);
+  assert.equal(profAClasses[0].id, classA.id);
+
+  // Admin visualiza todas as turmas (2)
+  const adminClasses = await TS.getAuthorizedClasses(adminUser);
+  assert.equal(adminClasses.length, 2);
+
+  // Prof A NÃO tem acesso irrestrito à coleção completa de usuários (/users)
+  await assert.rejects(
+    () => TS.getAllRegisteredUsers(profA),
+    /exclusiva de administradores/
+  );
+
+  // Prof A consegue publicar conteúdos, atividades e comunicados na SUA turma (classA)
+  const content = await TS.createClassContent(profA, classA, {
+    title: 'Modelagem Entidade-Relacionamento',
+    subject: 'Banco de Dados',
+    description: 'Conceitos de cardinalidade e chaves estrangeiras.',
+  });
+  assert.equal(content.title, 'Modelagem Entidade-Relacionamento');
+
+  const activity = await TS.createClassActivity(profA, classA, {
+    title: 'Projeto Prático SQL',
+    subject: 'Banco de Dados',
+    dueDate: '2026-11-20',
+    points: 10,
+  });
+  assert.equal(activity.title, 'Projeto Prático SQL');
+
+  const announcement = await TS.createClassAnnouncement(profA, classA, {
+    title: 'Aviso de Laboratório',
+    message: 'Aula prática no Lab 2 amanhã.',
+    priority: 'important',
+  });
+  assert.equal(announcement.priority, 'important');
+
+  // Prof A é BLOQUEADO ao tentar publicar ou editar a turma do Prof B (classB)
+  await assert.rejects(
+    () => TS.createClassContent(profA, classB, { title: 'Invasão', subject: 'Matemática' }),
+    /não possui autorização para administrar esta turma/
+  );
+  await assert.rejects(
+    () => TS.updateClass(profA, classB.id, { name: 'Turma Alterada' }),
+    /não possui autorização para administrar esta turma/
+  );
+
+  // Prof A NÃO consegue alterar a lista de docentes da própria turma
+  await assert.rejects(
+    () => TS.updateClass(profA, classA.id, { teacherIds: [profA.uid, profB.uid] }),
+    /professores não podem alterar a lista de docentes/
+  );
+
+  // Prof A NÃO consegue alterar permissões de usuários nem criar novas turmas
+  await assert.rejects(
+    () => TS.updateUserRoleByAdmin(profA, student1.id, 'professor'),
+    /exclusiva de administradores/
+  );
+  await assert.rejects(
+    () => TS.createClass(profA, { name: 'Turma Sem Autorização' }),
+    /exclusiva de administradores/
+  );
+
+  // Admin promove estudante a professor com sucesso
+  const promoted = await TS.updateUserRoleByAdmin(adminUser, student1.id, 'professor');
+  assert.equal(promoted.role, 'professor');
+
+  // Convite docente de uso único armazena apenas hash SHA-256 (nunca o código em texto puro no documento)
+  const { invite, plainCode } = await TS.createTeacherInviteByAdmin(adminUser, {
+    targetEmail: 'novoprof@cetep.ba.gov.br',
+    assignedClassIds: [classA.id],
+    expiresInDays: 7,
+  });
+  assert.equal(typeof plainCode, 'string');
+  assert.equal(typeof invite.codeHash, 'string');
+  assert.notEqual(plainCode, invite.codeHash);
+  assert.equal(invite.codeHash.length, 64); // SHA-256 hex
+  assert.equal('plainCode' in invite, false);
+});
+
+test('Fluxo de Gerenciamento de Estudantes na Turma (Busca Segura, Matrícula, Anti-Duplicidade, Auditoria e Bloqueios)', async () => {
+  const adminUser = { uid: 'uid-admin-1', name: 'Coordenador Admin', email: 'admin@cetep.ba.gov.br', role: 'admin' };
+  const profA = { uid: 'uid-prof-a', name: 'Prof. Informática', email: 'profa@cetep.ba.gov.br', role: 'professor' };
+  const profB = { uid: 'uid-prof-b', name: 'Prof. Redes', email: 'profb@cetep.ba.gov.br', role: 'professor' };
+
+  // Cria estudantes e também um usuário que será promovido a professor
+  const ana = await DS.register({ name: 'Ana Beatriz Silva', email: 'ana.silva@enova.educacao.ba.gov.br', password: '123' });
+  const carlos = await DS.register({ name: 'Carlos Eduardo Souza', email: 'carlos.souza@gmail.com', password: '123' });
+  const docenteConta = await DS.register({ name: 'Docente Cadastrado', email: 'docente@cetep.ba.gov.br', password: '123' });
+  await TS.updateUserRoleByAdmin(adminUser, docenteConta.id, 'professor');
+
+  // Adiciona dados pessoais/acessibilidade e tarefas na conta de Ana (que NÃO devem vazar na busca!)
+  await DS.updateUserProfile(ana.id, { preferences: { theme: 'high-contrast', fontSize: 'xl', dyslexiaMode: true } });
+  DS.createTask(ana.id, { title: 'Tarefa Confidencial de Ana', priority: 'high' });
+
+  const classA = await TS.createClass(adminUser, {
+    name: '2º INFO M1',
+    course: 'Técnico em Informática',
+    shift: 'Manhã',
+    teacherIds: [profA.uid],
+    studentIds: [],
+  });
+
+  const classB = await TS.createClass(adminUser, {
+    name: '3º INFO V1',
+    course: 'Técnico em Informática',
+    shift: 'Tarde',
+    teacherIds: [profB.uid],
+    studentIds: [],
+  });
+
+  // 3) Pesquisa de estudantes cadastrados por nome ou e-mail:
+  //    - Retorna SOMENTE contas com perfil 'aluno' (nunca retorna docenteConta)
+  //    - Retorna APENAS { uid, name, email, alreadyEnrolled } (sem expor preferências AEE nem tarefas)
+  const searchAll = await TS.searchStudentsForClass(profA, classA.id, '');
+  assert.equal(searchAll.length, 2);
+  assert.equal(searchAll.some(s => s.uid === docenteConta.id), false);
+
+  const searchAna = await TS.searchStudentsForClass(profA, classA.id, 'ana.silva');
+  assert.equal(searchAna.length, 1);
+  assert.deepEqual(Object.keys(searchAna[0]).sort(), ['alreadyEnrolled', 'email', 'name', 'uid']);
+  assert.equal(searchAna[0].uid, ana.id);
+  assert.equal(searchAna[0].alreadyEnrolled, false);
+  assert.equal('preferences' in searchAna[0], false);
+  assert.equal('tasks' in searchAna[0], false);
+
+  // 4) Adição de estudante à turma atribuída + registro de autoria no log de auditoria
+  const enrollRes = await TS.addStudentsToClass(profA, classA.id, [ana.id]);
+  assert.equal(enrollRes.ok, true);
+  assert.deepEqual(enrollRes.addedStudentIds, [ana.id]);
+  assert.equal(enrollRes.auditLog.actorUid, profA.uid);
+  assert.equal(enrollRes.auditLog.action, 'ADD_STUDENTS');
+
+  const logsAfterAdd = await TS.getClassAuditLogs(profA, classA.id);
+  assert.equal(logsAfterAdd.length, 1);
+  assert.equal(logsAfterAdd[0].actorUid, profA.uid);
+  assert.equal(logsAfterAdd[0].addedStudents[0].email, 'ana.silva@enova.educacao.ba.gov.br');
+
+  // Na próxima busca, Ana aparece marcada como alreadyEnrolled = true
+  const searchAfterEnroll = await TS.searchStudentsForClass(profA, classA.id, 'Beatriz');
+  assert.equal(searchAfterEnroll[0].alreadyEnrolled, true);
+
+  // 5) Tentativa de adicionar o mesmo estudante duas vezes -> bloqueado!
+  await assert.rejects(
+    () => TS.addStudentsToClass(profA, classA.id, [ana.id]),
+    /já está matriculado nesta turma/
+  );
+
+  // 6) Tentativa de professor adicionar ou pesquisar alunos em uma turma NÃO autorizada (classB) -> bloqueado!
+  await assert.rejects(
+    () => TS.searchStudentsForClass(profA, classB.id, 'carlos'),
+    /não possui autorização para administrar esta turma/
+  );
+  await assert.rejects(
+    () => TS.addStudentsToClass(profA, classB.id, [carlos.id]),
+    /não possui autorização para administrar esta turma/
+  );
+
+  // 7) Acesso por aluno tentando utilizar o núcleo do endpoint seguro (api/class-students.js) -> bloqueado (403)!
+  const mockAdapter = {
+    getUserById: async (uid) => (uid === ana.id ? { uid: ana.id, name: ana.name, email: ana.email, role: 'aluno' } : null),
+    getClassById: async () => classA,
+    listStudentAccountsOnly: async () => [],
+  };
+  await assert.rejects(
+    () =>
+      executeSecureClassStudentOperation(
+        { caller: { uid: ana.id, claimRole: 'aluno' }, action: 'search', classId: classA.id, query: '' },
+        mockAdapter
+      ),
+    /apenas professores autorizados e administradores/
+  );
+  await assert.rejects(
+    () =>
+      executeSecureClassStudentOperation(
+        { caller: { uid: ana.id, claimRole: 'aluno' }, action: 'enroll', classId: classA.id, studentIds: [carlos.id] },
+        mockAdapter
+      ),
+    /apenas professores autorizados e administradores/
+  );
+});
+
+

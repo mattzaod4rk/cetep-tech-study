@@ -1,62 +1,88 @@
 /**
  * scripts/set-teacher-role.mjs — Procedimento administrativo seguro (Server-Side / CLI)
- * para atribuir ou revogar o papel de `professor` no Firebase Authentication (Custom Claims)
- * e no documento `/users/{uid}` do Cloud Firestore.
+ * para atribuir ou revogar os papéis `admin`, `professor` ou `aluno` no Firebase Authentication
+ * (Custom Claims) e no documento `/users/{uid}` do Cloud Firestore.
  *
  * SEGURANÇA:
  * - Este script roda EXCLUSIVAMENTE em ambiente de servidor/terminal Node.js.
- * - NUNCA coloque a chave de conta de serviço (serviceAccountKey.json) dentro de `src/`
- *   ou em variáveis `VITE_*`.
+ * - NUNCA coloque credenciais administrativas dentro de `src/` ou em variáveis `VITE_*`.
  *
  * Como usar:
- *   1. Exporte a variável GOOGLE_APPLICATION_CREDENTIALS apontando para sua chave Admin:
- *      $env:GOOGLE_APPLICATION_CREDENTIALS="C:\caminho\seguro\serviceAccountKey.json"
- *   2. Execute:
- *      node scripts/set-teacher-role.mjs professora@enova.educacao.ba.gov.br professor
+ *   node scripts/set-teacher-role.mjs <email-do-usuario> [admin|professor|aluno]
  */
 
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import process from 'node:process';
+
+const PROJECT_ID = process.env.VITE_FIREBASE_PROJECT_ID || 'cetep-tech-study';
+const PROJECT_NUMBER = '758476659955';
+
+async function runViaFirebaseCliToken(targetEmail, targetRole) {
+  const cfgPath = path.join(os.homedir(), '.config', 'configstore', 'firebase-tools.json');
+  if (!fs.existsSync(cfgPath)) {
+    throw new Error('Sessão da Firebase CLI não encontrada. Execute `npx firebase-tools login` primeiro.');
+  }
+  const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
+  const token = cfg?.tokens?.access_token;
+  if (!token) throw new Error('Token OAuth da Firebase CLI ausente.');
+
+  const lookupRes = await fetch(
+    `https://identitytoolkit.googleapis.com/v1/projects/${PROJECT_NUMBER}/accounts:lookup`,
+    {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: [targetEmail.trim().toLowerCase()] }),
+    }
+  ).then(r => r.json());
+
+  const user = lookupRes?.users?.[0];
+  if (!user?.localId) {
+    throw new Error(`Usuário ${targetEmail} não encontrado no Firebase Authentication.`);
+  }
+
+  const uid = user.localId;
+  const claims = {
+    role: targetRole,
+    admin: targetRole === 'admin',
+  };
+
+  await fetch(`https://identitytoolkit.googleapis.com/v1/projects/${PROJECT_NUMBER}/accounts:update`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      localId: uid,
+      customAttributes: JSON.stringify(claims),
+    }),
+  });
+
+  await fetch(
+    `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/users/${uid}?updateMask.fieldPaths=role&updateMask.fieldPaths=updatedAt`,
+    {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fields: {
+          role: { stringValue: targetRole },
+          updatedAt: { stringValue: new Date().toISOString() },
+        },
+      }),
+    }
+  );
+
+  console.log(`✓ Perfil '${targetRole}' (Custom Claims + Firestore) atribuído para ${user.email} (UID: ${uid}).`);
+}
 
 async function main() {
   const [, , targetEmail, targetRole = 'professor'] = process.argv;
 
-  if (!targetEmail || !['professor', 'aluno'].includes(targetRole)) {
-    console.error('Uso: node scripts/set-teacher-role.mjs <email-do-usuario> [professor|aluno]');
+  if (!targetEmail || !['admin', 'professor', 'aluno'].includes(targetRole)) {
+    console.error('Uso: node scripts/set-teacher-role.mjs <email-do-usuario> [admin|professor|aluno]');
     process.exit(1);
   }
 
-  let admin;
-  try {
-    admin = await import('firebase-admin');
-  } catch {
-    console.error('Instale firebase-admin globalmente ou em ambiente administrativo para executar este script.');
-    process.exit(1);
-  }
-
-  const app = admin.default.initializeApp({
-    projectId: process.env.VITE_FIREBASE_PROJECT_ID || 'cetep-tech-study',
-  });
-
-  const auth = app.auth();
-  const db = app.firestore();
-
-  const userRecord = await auth.getUserByEmail(targetEmail.trim().toLowerCase());
-  await auth.setCustomUserClaims(userRecord.uid, {
-    role: targetRole,
-    admin: targetRole === 'professor',
-  });
-
-  await db.collection('users').doc(userRecord.uid).set(
-    {
-      uid: userRecord.uid,
-      email: userRecord.email,
-      role: targetRole,
-      updatedAt: new Date().toISOString(),
-    },
-    { merge: true }
-  );
-
-  console.log(`✓ Permissão '${targetRole}' atribuída com sucesso para ${userRecord.email} (UID: ${userRecord.uid}).`);
+  await runViaFirebaseCliToken(targetEmail, targetRole);
 }
 
 main().catch(err => {

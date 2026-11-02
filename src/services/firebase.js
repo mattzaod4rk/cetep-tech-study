@@ -179,8 +179,10 @@ export async function ensureFirestoreUserProfile(firebaseUser, { fallbackName = 
 
   let customClaimRole = null;
   try {
-    const tokenResult = await firebaseUser.getIdTokenResult();
-    if (tokenResult?.claims?.role === 'professor' || tokenResult?.claims?.admin === true) {
+    const tokenResult = await firebaseUser.getIdTokenResult(true);
+    if (tokenResult?.claims?.admin === true || tokenResult?.claims?.role === 'admin') {
+      customClaimRole = 'admin';
+    } else if (tokenResult?.claims?.role === 'professor') {
       customClaimRole = 'professor';
     }
   } catch {
@@ -202,6 +204,8 @@ export async function ensureFirestoreUserProfile(firebaseUser, { fallbackName = 
       photoURL: firebaseUser.photoURL || null,
       emailVerified: Boolean(firebaseUser.emailVerified),
       authProviders: providers,
+      assignedClassIds: [],
+      enrolledClassIds: [],
     };
   }
 
@@ -211,17 +215,20 @@ export async function ensureFirestoreUserProfile(firebaseUser, { fallbackName = 
   try {
     const snap = await getDoc(userRef);
     if (!snap.exists()) {
-      // Criação inicial: SEMPRE role === 'aluno' (exigido pelas Security Rules)
+      // Criação inicial: SEMPRE role === 'aluno' no cadastro público (ou customClaimRole se já for admin no Auth)
+      const initialRole = customClaimRole === 'admin' ? 'admin' : 'aluno';
       const newProfile = {
         id: uid,
         uid,
         name: displayName,
         email,
-        role: 'aluno',
+        role: initialRole,
         photoURL: firebaseUser.photoURL || null,
         emailVerified: Boolean(firebaseUser.emailVerified),
         authProviders: providers.length ? providers : ['password'],
         migratedFromLocal: false,
+        assignedClassIds: [],
+        enrolledClassIds: [],
         createdAt: nowISO,
         updatedAt: nowISO,
       };
@@ -233,24 +240,32 @@ export async function ensureFirestoreUserProfile(firebaseUser, { fallbackName = 
     }
 
     const existing = snap.data();
+    const effectiveRole = customClaimRole || existing.role || 'aluno';
     const updatedProfile = {
       id: existing.id || uid,
       uid,
       name: existing.name || displayName,
       email: existing.email || email,
-      role: existing.role || 'aluno', // Mantém role original (imutável pelo cliente)
+      role: existing.role || 'aluno', // Mantém role do documento (imutável por não-admins)
       photoURL: firebaseUser.photoURL || existing.photoURL || null,
       emailVerified: Boolean(firebaseUser.emailVerified),
       authProviders: providers.length ? providers : (existing.authProviders || ['password']),
       migratedFromLocal: Boolean(existing.migratedFromLocal),
+      assignedClassIds: Array.isArray(existing.assignedClassIds) ? existing.assignedClassIds : [],
+      enrolledClassIds: Array.isArray(existing.enrolledClassIds) ? existing.enrolledClassIds : [],
       createdAt: existing.createdAt || nowISO,
       updatedAt: nowISO,
     };
 
+    // Se o usuário possui Custom Claim de admin assinada no servidor, sincroniza no documento
+    if (customClaimRole === 'admin' && updatedProfile.role !== 'admin') {
+      updatedProfile.role = 'admin';
+    }
+
     await setDoc(userRef, updatedProfile);
     return {
       ...updatedProfile,
-      role: customClaimRole || updatedProfile.role,
+      role: effectiveRole,
     };
   } catch (err) {
     console.warn('[Firestore] Não foi possível sincronizar perfil em /users/{uid}:', err);
@@ -263,6 +278,8 @@ export async function ensureFirestoreUserProfile(firebaseUser, { fallbackName = 
       photoURL: firebaseUser.photoURL || null,
       emailVerified: Boolean(firebaseUser.emailVerified),
       authProviders: providers,
+      assignedClassIds: [],
+      enrolledClassIds: [],
     };
   }
 }

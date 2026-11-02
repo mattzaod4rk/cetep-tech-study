@@ -2,7 +2,7 @@ import React from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, CheckSquare, Calendar, Timer,
-  TrendingUp, Settings, LogOut, GraduationCap, Mic, BookOpen, Flame
+  TrendingUp, Settings, LogOut, GraduationCap, Mic, BookOpen, Flame, Users, ShieldCheck
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext.jsx';
 import { useApp } from '../../contexts/AppContext.jsx';
@@ -24,6 +24,12 @@ const ORGANIZATION_NAV = [
 
 const MOBILE_NAV = [...ACADEMIC_NAV, ...ORGANIZATION_NAV];
 
+function formatRoleLabel(role) {
+  if (role === 'admin') return 'Administrador · CETEP';
+  if (role === 'professor') return 'Professor(a) · AEE / CETEP';
+  return 'Estudante · Técnico em Informática';
+}
+
 export default function AppLayout() {
   const { user, logout } = useAuth();
   const { gamification, isTranscriptionOpen, setIsTranscriptionOpen } = useApp();
@@ -40,6 +46,9 @@ export default function AppLayout() {
     .slice(0, 2)
     .join('')
     .toUpperCase() || '?';
+
+  const isStaff = user?.role === 'professor' || user?.role === 'admin';
+  const isAdmin = user?.role === 'admin';
 
   return (
     <div className="app-shell">
@@ -81,6 +90,30 @@ export default function AppLayout() {
               {label}
             </NavLink>
           ))}
+
+          {isStaff && (
+            <>
+              <div className="sidebar-section-label" style={{ marginTop: 10 }}>Gestão Institucional</div>
+              <NavLink
+                to="/teacher"
+                className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+                id="sidebar-teacher-link"
+              >
+                <Users size={17} aria-hidden="true" />
+                Painel Docente
+              </NavLink>
+              {isAdmin && (
+                <NavLink
+                  to="/teacher?tab=admin"
+                  className="nav-item"
+                  id="sidebar-admin-link"
+                >
+                  <ShieldCheck size={17} aria-hidden="true" />
+                  Administração & Perfis
+                </NavLink>
+              )}
+            </>
+          )}
         </nav>
 
         <div className="sidebar-footer">
@@ -131,7 +164,7 @@ export default function AppLayout() {
             <div className="user-avatar" aria-hidden="true">{initials}</div>
             <div className="user-info">
               <div className="user-name">{user?.name}</div>
-              <div className="user-role">{user?.role === 'aluno' ? 'Estudante · Técnico em Informática' : 'Docente'}</div>
+              <div className="user-role">{formatRoleLabel(user?.role)}</div>
             </div>
             <LogOut size={15} color="var(--color-sidebar-text)" aria-hidden="true" style={{ opacity: 0.65 }} />
           </div>
@@ -166,15 +199,26 @@ export default function AppLayout() {
               {label.split(' ')[0]}
             </NavLink>
           ))}
-          <button
-            type="button"
-            onClick={() => setIsTranscriptionOpen(prev => !prev)}
-            className={`bottom-nav-item ${isTranscriptionOpen ? 'active' : ''}`}
-            aria-label="Legendas de voz ao vivo"
-          >
-            <Mic size={20} aria-hidden="true" />
-            Legenda
-          </button>
+          {isStaff ? (
+            <NavLink
+              to="/teacher"
+              className={({ isActive }) => `bottom-nav-item ${isActive ? 'active' : ''}`}
+              aria-label="Painel Docente"
+            >
+              <Users size={20} aria-hidden="true" />
+              Docente
+            </NavLink>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setIsTranscriptionOpen(prev => !prev)}
+              className={`bottom-nav-item ${isTranscriptionOpen ? 'active' : ''}`}
+              aria-label="Legendas de voz ao vivo"
+            >
+              <Mic size={20} aria-hidden="true" />
+              Legenda
+            </button>
+          )}
         </div>
       </nav>
     </div>

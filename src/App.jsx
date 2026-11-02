@@ -1,6 +1,6 @@
-import React from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { Toaster } from 'react-hot-toast';
+import React, { useEffect } from 'react';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import toast, { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './contexts/AuthContext.jsx';
 import { AppProvider } from './contexts/AppContext.jsx';
 import AppLayout from './components/layout/AppLayout.jsx';
@@ -14,11 +14,28 @@ import ProgressPage from './pages/ProgressPage.jsx';
 import SettingsPage from './pages/SettingsPage.jsx';
 import TeacherDashboard from './pages/teacher/TeacherDashboard.jsx';
 
+function UnauthorizedRedirect({ target = '/dashboard', message }) {
+  const location = useLocation();
+  useEffect(() => {
+    if (message) {
+      toast.error(message, { id: `unauth-${location.pathname}` });
+    }
+  }, [message, location.pathname]);
+  return <Navigate to={target} replace />;
+}
+
 function ProtectedRoute({ children, roles }) {
   const { user, loading } = useAuth();
   if (loading) return <div className="loading-center"><div className="spinner" /></div>;
   if (!user) return <Navigate to="/auth" replace />;
-  if (roles && !roles.includes(user.role)) return <Navigate to="/" replace />;
+  if (roles && !roles.includes(user.role)) {
+    return (
+      <UnauthorizedRedirect
+        target="/dashboard"
+        message="Acesso negado: você não possui permissão para acessar esta área."
+      />
+    );
+  }
   return children;
 }
 
@@ -30,8 +47,6 @@ function PublicRoute({ children }) {
 }
 
 function RootRedirect() {
-  const { user } = useAuth();
-  if (user?.role === 'professor') return <Navigate to="/teacher" replace />;
   return <Navigate to="/dashboard" replace />;
 }
 
@@ -40,7 +55,8 @@ function AppRoutes() {
     <Routes>
       <Route path="/auth" element={<PublicRoute><AuthPage /></PublicRoute>} />
       <Route path="/" element={<ProtectedRoute><RootRedirect /></ProtectedRoute>} />
-      <Route element={<ProtectedRoute roles={['aluno']}><AppLayout /></ProtectedRoute>}>
+      {/* Área do Estudante: acessível a alunos, professores e administradores */}
+      <Route element={<ProtectedRoute roles={['aluno', 'professor', 'admin']}><AppLayout /></ProtectedRoute>}>
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/tasks" element={<TasksPage />} />
         <Route path="/agenda" element={<AgendaPage />} />
@@ -49,7 +65,15 @@ function AppRoutes() {
         <Route path="/progress" element={<ProgressPage />} />
         <Route path="/settings" element={<SettingsPage />} />
       </Route>
-      <Route path="/teacher" element={<ProtectedRoute roles={['professor']}><TeacherDashboard /></ProtectedRoute>} />
+      {/* Painel Docente e Administrativo: restrito a professores autorizados e administradores */}
+      <Route
+        path="/teacher"
+        element={
+          <ProtectedRoute roles={['professor', 'admin']}>
+            <TeacherDashboard />
+          </ProtectedRoute>
+        }
+      />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
