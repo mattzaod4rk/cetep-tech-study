@@ -41,6 +41,8 @@ rules_version = '2';
 //   - /contents/{contentId}
 //   - /activities/{activityId}
 //   - /announcements/{announcementId}
+//   - /materials/{materialId}
+//     - /chunks/{chunkId}
 //
 // Collection: /teacherInvites/{inviteId}
 // Fields:
@@ -463,6 +465,42 @@ service cloud.firestore {
         isValidOptionalTimestampOrDateString(data, 'updatedAt');
     }
 
+    function isValidClassMaterial(data) {
+      return request.resource.data.keys().hasOnly([
+          'id', 'classId', 'title', 'subject', 'description',
+          'fileName', 'fileSize', 'fileType', 'totalChunks', 'url',
+          'authorId', 'authorName', 'createdAt', 'updatedAt'
+        ]) &&
+        data.title is string &&
+        data.title.size() >= 1 &&
+        data.title.size() <= 200 &&
+        data.subject is string &&
+        data.subject.size() >= 1 &&
+        data.subject.size() <= 120 &&
+        isValidOptionalString(data, 'id', 1, 128) &&
+        isValidOptionalString(data, 'classId', 1, 128) &&
+        isValidOptionalString(data, 'description', 0, 3000) &&
+        isValidOptionalString(data, 'fileName', 0, 255) &&
+        isValidOptionalString(data, 'fileType', 0, 100) &&
+        isValidOptionalString(data, 'url', 0, 1000) &&
+        isValidOptionalString(data, 'authorId', 0, 128) &&
+        isValidOptionalString(data, 'authorName', 0, 120) &&
+        (!('fileSize' in data) || (data.fileSize is number && data.fileSize >= 0)) &&
+        (!('totalChunks' in data) || (data.totalChunks is number && data.totalChunks >= 0 && data.totalChunks <= 50)) &&
+        isValidOptionalTimestampOrDateString(data, 'createdAt') &&
+        isValidOptionalTimestampOrDateString(data, 'updatedAt');
+    }
+
+    function isValidMaterialChunk(data) {
+      return request.resource.data.keys().hasOnly(['id', 'chunkIndex', 'data', 'createdAt']) &&
+        data.chunkIndex is number &&
+        data.chunkIndex >= 0 &&
+        data.data is string &&
+        data.data.size() <= 800000 &&
+        isValidOptionalString(data, 'id', 1, 128) &&
+        isValidOptionalTimestampOrDateString(data, 'createdAt');
+    }
+
     function isValidTeacherInvite(data) {
       return request.resource.data.keys().hasOnly([
           'id', 'codePreview', 'codeHash', 'targetEmail', 'assignedClassIds',
@@ -658,6 +696,21 @@ service cloud.firestore {
         allow read: if canReadClass(classId);
         allow create, update: if canManageClass(classId) && isValidClassAnnouncement(request.resource.data);
         allow delete: if canManageClass(classId);
+      }
+
+      // ---------------------------------------------------------------
+      // Subcollection: /classes/{classId}/materials/{materialId}
+      // ---------------------------------------------------------------
+      match /materials/{materialId} {
+        allow read: if canReadClass(classId);
+        allow create, update: if canManageClass(classId) && isValidClassMaterial(request.resource.data);
+        allow delete: if canManageClass(classId);
+
+        match /chunks/{chunkId} {
+          allow read: if canReadClass(classId);
+          allow create, update: if canManageClass(classId) && isValidMaterialChunk(request.resource.data);
+          allow delete: if canManageClass(classId);
+        }
       }
 
       // ---------------------------------------------------------------

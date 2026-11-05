@@ -777,3 +777,102 @@ test('Visibilidade Docente -> Estudante e Perfil Acadêmico Individual (Atividad
   assert.equal(adminProfileView.internalNotes.length, 1);
   assert.equal(adminProfileView.academicRecords.length, 1);
 });
+
+test('Regras de Segurança Firestore: Suporte à subcoleção de Materiais / PDFs e Chunks', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const rulesPath = path.resolve(process.cwd(), 'firestore.rules');
+  const content = fs.readFileSync(rulesPath, 'utf8');
+
+  // Verifica a estrutura das regras da subcoleção de materiais
+  assert.match(content, /match \/materials\/\{materialId\} \{/);
+  assert.match(content, /allow read: if canReadClass\(classId\);/);
+  assert.match(content, /allow create, update: if canManageClass\(classId\) && isValidClassMaterial\(request\.resource\.data\);/);
+  assert.match(content, /allow delete: if canManageClass\(classId\);/);
+
+  // Verifica a subcoleção aninhada de chunks
+  assert.match(content, /match \/chunks\/\{chunkId\} \{/);
+  assert.match(content, /allow create, update: if canManageClass\(classId\) && isValidMaterialChunk\(request\.resource\.data\);/);
+
+  // Verifica os validadores
+  assert.match(content, /function isValidClassMaterial\(data\) \{/);
+  assert.match(content, /function isValidMaterialChunk\(data\) \{/);
+  assert.match(content, /totalChunks <= 50/);
+  assert.match(content, /data\.data\.size\(\) <= 800000/);
+});
+
+
+test('Gestão e Envio de Materiais / Arquivos PDFs por Turma (Chunks, RBAC e Feed de Alunos)', async () => {
+  const TS = await import('../src/services/TeacherService.js');
+
+  const admin = { uid: 'adm-1', id: 'adm-1', name: 'Diretoria', role: 'admin' };
+  const prof1 = { uid: 'prof-mat', id: 'prof-mat', name: 'Prof. Carlos', role: 'professor' };
+  const prof2 = { uid: 'prof-hist', id: 'prof-hist', name: 'Prof. Roberto', role: 'professor' };
+  const student = { uid: 'stud-pdf', id: 'stud-pdf', name: 'Estudante PDF', role: 'aluno' };
+
+  // Cria turma com prof1 e matricula o aluno
+  const turmaA = await TS.createClass(admin, {
+    name: 'Turma Informática 2026',
+    teacherIds: [prof1.uid],
+    studentIds: [student.uid],
+  });
+
+  // Turma B sem prof1
+  const turmaB = await TS.createClass(admin, {
+    name: 'Turma Eletromecânica',
+    teacherIds: [prof2.uid],
+    studentIds: [],
+  });
+
+  // Simula upload de PDF com base64
+  const fakePdfBase64 = 'JVBERi0xLjQKJcTl8uXr...FakePdfContentForTesting...';
+  const mat = await TS.createClassMaterial(prof1, turmaA, {
+    title: 'Apostila Redes de Computadores - Cap 1',
+    subject: 'Lógica de Programação',
+    description: 'Leitura obrigatória para a aula prática de amanhã.',
+    fileName: 'apostila_redes_cap1.pdf',
+    fileSize: fakePdfBase64.length,
+    fileType: 'application/pdf',
+    fileBase64: fakePdfBase64,
+  });
+
+  assert.equal(mat.title, 'Apostila Redes de Computadores - Cap 1');
+  assert.equal(mat.fileName, 'apostila_redes_cap1.pdf');
+  assert.equal(mat.totalChunks, 1);
+
+  // Professor lista materiais da turma A
+  const matsList = await TS.getClassMaterials(prof1, turmaA);
+  assert.equal(matsList.length, 1);
+  assert.equal(matsList[0].id, mat.id);
+
+  // Download do material reconstrói o base64
+  const dl = await TS.downloadClassMaterial(prof1, turmaA.id, mat.id);
+  assert.equal(dl.base64, fakePdfBase64);
+
+  // Aluno matriculado vê o material no feed
+  const feed = await TS.getStudentEnrolledClassesFeed(student);
+  assert.equal(feed.materials.length, 1);
+  assert.equal(feed.materials[0].title, 'Apostila Redes de Computadores - Cap 1');
+
+  // Prof2 (não atribuído à Turma A) é BLOQUEADO
+  await assert.rejects(
+    () => TS.createClassMaterial(prof2, turmaA, { title: 'Material Invadido', subject: 'Física' }),
+    /não possui autorização para administrar esta turma/
+  );
+
+  // Aluno é BLOQUEADO ao tentar publicar ou deletar
+  await assert.rejects(
+    () => TS.createClassMaterial(student, turmaA, { title: 'Hack', subject: 'Matemática' }),
+    /restrita a professores/
+  );
+  await assert.rejects(
+    () => TS.deleteClassMaterial(student, turmaA, mat.id),
+    /restrita a professores/
+  );
+
+  // Prof1 consegue deletar seu material
+  const delRes = await TS.deleteClassMaterial(prof1, turmaA, mat.id);
+  assert.equal(delRes, true);
+  const matsAfterDel = await TS.getClassMaterials(prof1, turmaA);
+  assert.equal(matsAfterDel.length, 0);
+});

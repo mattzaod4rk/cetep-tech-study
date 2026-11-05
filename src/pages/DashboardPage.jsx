@@ -4,7 +4,8 @@ import {
   Plus, Timer, Calendar, FileText, CheckSquare,
   BookOpen, Clock, Target, Zap, AlertTriangle,
   ChevronRight, Flame, Shield, CheckCircle2, GraduationCap,
-  Megaphone, ExternalLink, Award, MessageSquare
+  Megaphone, ExternalLink, Award, MessageSquare,
+  Download, RefreshCw
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { useApp } from '../contexts/AppContext.jsx';
@@ -31,6 +32,7 @@ export default function DashboardPage() {
   const [classFeed, setClassFeed] = useState({
     enrolledClasses: [],
     contents: [],
+    materials: [],
     activities: [],
     announcements: [],
     individualActivities: [],
@@ -38,6 +40,7 @@ export default function DashboardPage() {
     pedagogicalFeedbacks: [],
   });
   const [loading, setLoading] = useState(true);
+  const [downloadingMaterialId, setDownloadingMaterialId] = useState(null);
   const [showTaskModal, setShowTaskModal] = useState(false);
   const [showSummarize, setShowSummarize] = useState(false);
 
@@ -57,6 +60,7 @@ export default function DashboardPage() {
       const feed = await TeacherService.getStudentEnrolledClassesFeed(user).catch(() => ({
         enrolledClasses: [],
         contents: [],
+        materials: [],
         activities: [],
         announcements: [],
         individualActivities: [],
@@ -119,9 +123,44 @@ export default function DashboardPage() {
     load();
   };
 
-  const handleTaskCreated = () => {
-    load();
-    setShowTaskModal(false);
+  const handleTaskCreated = () => {
+    load();
+    setShowTaskModal(false);
+  };
+
+  const handleDownloadMaterial = async (item) => {
+    setDownloadingMaterialId(item.id);
+    try {
+      const res = await TeacherService.downloadClassMaterial(user, item.classId, item.id);
+      if (!res.base64 && !item.url) {
+        toast.error('Nenhum dado de arquivo encontrado para este material.');
+        return;
+      }
+      if (res.base64) {
+        const byteCharacters = atob(res.base64);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+          byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        const blob = new Blob([byteArray], { type: item.fileType || 'application/pdf' });
+        const blobUrl = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = blobUrl;
+        a.download = item.fileName || `${item.title}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+        toast.success('Download do PDF iniciado!');
+      } else if (item.url) {
+        window.open(item.url, '_blank');
+      }
+    } catch (err) {
+      toast.error(err.message || 'Erro ao baixar material PDF.');
+    } finally {
+      setDownloadingMaterialId(null);
+    }
   };
 
   if (loading) return <div className="loading-center"><div className="spinner" /></div>;
@@ -638,7 +677,8 @@ export default function DashboardPage() {
         {classFeed.enrolledClasses.length === 0 &&
          classFeed.individualActivities.length === 0 &&
          classFeed.academicRecords.length === 0 &&
-         classFeed.pedagogicalFeedbacks.length === 0 ? (
+         classFeed.pedagogicalFeedbacks.length === 0 &&
+         (!classFeed.materials || classFeed.materials.length === 0) ? (
           <div style={{
             padding: '20px 16px',
             borderRadius: 10,
@@ -756,6 +796,93 @@ export default function DashboardPage() {
                             >
                               Ver Caderno <ChevronRight size={12} />
                             </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div>
+                <h4 style={{ fontSize: '0.88rem', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <FileText size={15} style={{ color: 'var(--color-primary)' }} />
+                  Arquivos PDFs & Apostilas da Turma ({classFeed.materials?.length || 0})
+                </h4>
+                {(!classFeed.materials || classFeed.materials.length === 0) ? (
+                  <div style={{ padding: '12px', borderRadius: 8, background: 'var(--color-bg-subtle)', fontSize: '0.82rem', color: 'var(--color-text-muted)' }}>
+                    Nenhum arquivo PDF compartilhado pelos professores ainda.
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {classFeed.materials.map(mat => (
+                      <div
+                        key={mat.id}
+                        style={{
+                          padding: '12px 14px',
+                          borderRadius: 8,
+                          background: 'var(--color-bg-input)',
+                          border: '1px solid var(--color-border)',
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, marginBottom: 4 }}>
+                          <strong style={{ fontSize: '0.88rem' }}>{mat.title}</strong>
+                          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                            <span className="chip">{mat.subject}</span>
+                            {mat.fileName && (
+                              <span style={{
+                                fontSize: '0.72rem',
+                                padding: '2px 6px',
+                                borderRadius: 5,
+                                background: 'rgba(239, 68, 68, 0.12)',
+                                color: 'var(--color-danger)',
+                                fontWeight: 600,
+                              }}>
+                                PDF
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        {mat.description && (
+                          <p style={{ margin: '0 0 8px', fontSize: '0.82rem', color: 'var(--color-text-secondary)', whiteSpace: 'pre-wrap' }}>
+                            {mat.description}
+                          </p>
+                        )}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+                          <span style={{ fontSize: '0.74rem', color: 'var(--color-text-muted)' }}>
+                            {mat.className && <span>{mat.className} · </span>}
+                            Prof. {mat.authorName} · {mat.createdAt ? new Date(mat.createdAt).toLocaleDateString('pt-BR') : ''}
+                          </span>
+                          <div style={{ display: 'flex', gap: 8 }}>
+                            {(mat.totalChunks > 0 || mat.fileName) && (
+                              <button
+                                type="button"
+                                className="btn btn-primary btn-sm"
+                                disabled={downloadingMaterialId === mat.id}
+                                onClick={() => handleDownloadMaterial(mat)}
+                                style={{ fontSize: '0.76rem', padding: '4px 10px' }}
+                              >
+                                {downloadingMaterialId === mat.id ? (
+                                  <>
+                                    <RefreshCw size={12} className="spin" /> Baixando...
+                                  </>
+                                ) : (
+                                  <>
+                                    <Download size={12} /> Baixar PDF
+                                  </>
+                                )}
+                              </button>
+                            )}
+                            {mat.url && (
+                              <a
+                                href={mat.url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="btn btn-secondary btn-sm"
+                                style={{ fontSize: '0.76rem', padding: '4px 10px' }}
+                              >
+                                <ExternalLink size={12} /> Abrir link
+                              </a>
+                            )}
                           </div>
                         </div>
                       </div>

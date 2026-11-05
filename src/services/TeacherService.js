@@ -34,6 +34,8 @@ const LOCAL_KEYS = {
   ACADEMIC_RECORDS: 'cetep_student_academic_records',
   PEDAGOGICAL_FEEDBACKS: 'cetep_student_pedagogical_feedbacks',
   INTERNAL_NOTES: 'cetep_student_internal_notes',
+  CLASS_MATERIALS: 'cetep_class_materials',
+  CLASS_MATERIAL_CHUNKS: 'cetep_class_material_chunks',
 };
 
 function loadLocal(key, fallback) {
@@ -1101,6 +1103,144 @@ export async function deleteClassAnnouncement(actorUser, classObj, announcementI
   return true;
 }
 
+// ─── 5.1 Materiais e Arquivos PDFs da Turma (/classes/{classId}/materials) ────
+
+export async function getClassMaterials(actorUser, classObj) {
+  assertCanManageClass(actorUser, classObj);
+
+  if (!db) {
+    const all = loadLocal(LOCAL_KEYS.CLASS_MATERIALS, {});
+    return all[classObj.id] || [];
+  }
+
+  const snap = await getDocs(collection(db, 'classes', classObj.id, 'materials'));
+  return snap.docs
+    .map(d => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+}
+
+export async function createClassMaterial(actorUser, classObj, materialData) {
+  assertCanManageClass(actorUser, classObj);
+  if (!materialData?.title?.trim()) throw new Error('O título do material é obrigatório.');
+  if (!materialData?.subject?.trim()) throw new Error('Selecione a disciplina.');
+
+  const nowISO = new Date().toISOString();
+  const fileBase64 = String(materialData.fileBase64 || '');
+  const fileName = String(materialData.fileName || 'documento.pdf').trim().slice(0, 255);
+  const fileSize = Number(materialData.fileSize) || 0;
+  const fileType = String(materialData.fileType || 'application/pdf').slice(0, 100);
+
+  // Dividir o base64 em partes (chunks) de até 500.000 caracteres (dentro do limite Firestore)
+  const CHUNK_SIZE = 500000;
+  const chunks = [];
+  if (fileBase64) {
+    for (let i = 0; i < fileBase64.length; i += CHUNK_SIZE) {
+      chunks.push({
+        id: `chunk-${chunks.length}`,
+        chunkIndex: chunks.length,
+        data: fileBase64.slice(i, i + CHUNK_SIZE),
+        createdAt: nowISO,
+      });
+    }
+  }
+
+  if (chunks.length > 50) {
+    throw new Error('O arquivo excede o limite máximo suportado (máx. 50 partes ~15MB).');
+  }
+
+  const item = {
+    id: generateId('mat'),
+    classId: classObj.id,
+    title: String(materialData.title).trim().slice(0, 200),
+    subject: normalizeLegacySubjectName(materialData.subject).slice(0, 120),
+    description: String(materialData.description || '').trim().slice(0, 3000),
+    fileName,
+    fileSize,
+    fileType,
+    totalChunks: chunks.length,
+    url: String(materialData.url || '').trim().slice(0, 1000),
+    authorId: String(actorUser.uid || actorUser.id).slice(0, 128),
+    authorName: String(actorUser.name || 'Professor').slice(0, 120),
+    createdAt: nowISO,
+    updatedAt: nowISO,
+  };
+
+  if (!db) {
+    const all = loadLocal(LOCAL_KEYS.CLASS_MATERIALS, {});
+    all[classObj.id] = [item, ...(all[classObj.id] || [])];
+    saveLocal(LOCAL_KEYS.CLASS_MATERIALS, all);
+
+    const allChunks = loadLocal(LOCAL_KEYS.CLASS_MATERIAL_CHUNKS, {});
+    allChunks[item.id] = chunks;
+    saveLocal(LOCAL_KEYS.CLASS_MATERIAL_CHUNKS, allChunks);
+    return item;
+  }
+
+  // Se houver chunks, envia em lote para a subcoleção
+  if (chunks.length > 0) {
+    await Promise.all(
+      chunks.map(chunk =>
+        setDoc(
+          doc(db, 'classes', classObj.id, 'materials', item.id, 'chunks', chunk.id),
+          chunk
+        )
+      )
+    );
+  }
+
+  // Grava o documento principal de metadados do material
+  await setDoc(doc(db, 'classes', classObj.id, 'materials', item.id), item);
+  return item;
+}
+
+export async function deleteClassMaterial(actorUser, classObj, materialId) {
+  assertCanManageClass(actorUser, classObj);
+
+  if (!db) {
+    const all = loadLocal(LOCAL_KEYS.CLASS_MATERIALS, {});
+    all[classObj.id] = (all[classObj.id] || []).filter(x => x.id !== materialId);
+    saveLocal(LOCAL_KEYS.CLASS_MATERIALS, all);
+
+    const allChunks = loadLocal(LOCAL_KEYS.CLASS_MATERIAL_CHUNKS, {});
+    delete allChunks[materialId];
+    saveLocal(LOCAL_KEYS.CLASS_MATERIAL_CHUNKS, allChunks);
+    return true;
+  }
+
+  const chunksSnap = await getDocs(
+    collection(db, 'classes', classObj.id, 'materials', materialId, 'chunks')
+  );
+  await Promise.all(chunksSnap.docs.map(d => deleteDoc(d.ref)));
+  await deleteDoc(doc(db, 'classes', classObj.id, 'materials', materialId));
+  return true;
+}
+
+export async function downloadClassMaterial(actorUser, classId, materialId) {
+  const cId = typeof classId === 'object' && classId?.id ? classId.id : classId;
+  if (!db) {
+    const allChunks = loadLocal(LOCAL_KEYS.CLASS_MATERIAL_CHUNKS, {});
+    const chunks = (allChunks[materialId] || []).sort((a, b) => a.chunkIndex - b.chunkIndex);
+    const base64 = chunks.map(c => c.data).join('');
+    return {
+      base64,
+      dataUrl: base64 ? `data:application/pdf;base64,${base64}` : null,
+    };
+  }
+
+  const chunksSnap = await getDocs(
+    collection(db, 'classes', cId, 'materials', materialId, 'chunks')
+  );
+  const chunks = chunksSnap.docs
+    .map(d => d.data())
+    .sort((a, b) => a.chunkIndex - b.chunkIndex);
+
+  const base64 = chunks.map(c => c.data).join('');
+  return {
+    base64,
+    dataUrl: base64 ? `data:application/pdf;base64,${base64}` : null,
+  };
+}
+
 // ─── 6. Controle Administrativo de Perfis, Permissões e Convites ─────────────
 
 /**
@@ -1240,6 +1380,7 @@ export async function getStudentEnrolledClassesFeed(studentUser) {
       contents: [],
       activities: [],
       announcements: [],
+      materials: [],
       individualActivities: [],
       academicRecords: [],
       pedagogicalFeedbacks: [],
@@ -1256,10 +1397,12 @@ export async function getStudentEnrolledClassesFeed(studentUser) {
     const allContentsMap = loadLocal(LOCAL_KEYS.CLASS_CONTENTS, {});
     const allActivitiesMap = loadLocal(LOCAL_KEYS.CLASS_ACTIVITIES, {});
     const allAnnouncementsMap = loadLocal(LOCAL_KEYS.CLASS_ANNOUNCEMENTS, {});
+    const allMaterialsMap = loadLocal(LOCAL_KEYS.CLASS_MATERIALS, {});
 
     const contents = [];
     const activities = [];
     const announcements = [];
+    const materials = [];
 
     for (const cls of enrolledClasses) {
       for (const cnt of allContentsMap[cls.id] || []) {
@@ -1285,6 +1428,14 @@ export async function getStudentEnrolledClassesFeed(studentUser) {
           className: cls.name,
         });
       }
+      for (const mat of allMaterialsMap[cls.id] || []) {
+        materials.push({
+          ...mat,
+          subject: normalizeLegacySubjectName(mat.subject),
+          classId: cls.id,
+          className: cls.name,
+        });
+      }
     }
 
     const indActsMap = loadLocal(LOCAL_KEYS.INDIVIDUAL_ACTIVITIES, {});
@@ -1296,6 +1447,7 @@ export async function getStudentEnrolledClassesFeed(studentUser) {
       contents: contents.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || '')),
       activities: activities.sort((a, b) => (a.dueDate || '').localeCompare(b.dueDate || '')),
       announcements: announcements.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || '')),
+      materials: materials.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || '')),
       individualActivities: (indActsMap[studentUid] || []).map(x => ({
         ...x,
         subject: normalizeLegacySubjectName(x.subject),
@@ -1317,13 +1469,15 @@ export async function getStudentEnrolledClassesFeed(studentUser) {
   const contents = [];
   const activities = [];
   const announcements = [];
+  const materials = [];
 
   await Promise.all(
     enrolledClasses.map(async cls => {
-      const [cntSnap, actSnap, annSnap] = await Promise.all([
+      const [cntSnap, actSnap, annSnap, matSnap] = await Promise.all([
         getDocs(collection(db, 'classes', cls.id, 'contents')),
         getDocs(collection(db, 'classes', cls.id, 'activities')),
         getDocs(collection(db, 'classes', cls.id, 'announcements')),
+        getDocs(collection(db, 'classes', cls.id, 'materials')),
       ]);
 
       for (const d of cntSnap.docs) {
@@ -1355,6 +1509,16 @@ export async function getStudentEnrolledClassesFeed(studentUser) {
           className: cls.name,
         });
       }
+      for (const d of matSnap.docs) {
+        const data = d.data();
+        materials.push({
+          id: d.id,
+          ...data,
+          subject: normalizeLegacySubjectName(data.subject),
+          classId: cls.id,
+          className: cls.name,
+        });
+      }
     })
   );
 
@@ -1381,6 +1545,7 @@ export async function getStudentEnrolledClassesFeed(studentUser) {
     contents: contents.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || '')),
     activities: activities.sort((a, b) => (a.dueDate || '').localeCompare(b.dueDate || '')),
     announcements: announcements.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || '')),
+    materials: materials.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || '')),
     individualActivities,
     academicRecords,
     pedagogicalFeedbacks,

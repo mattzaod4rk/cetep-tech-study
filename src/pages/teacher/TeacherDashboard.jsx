@@ -42,6 +42,8 @@ import {
   Eye,
   Flame,
   ClipboardList,
+  UploadCloud,
+  Download,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext.jsx';
 import AccessibilityBar from '../../components/accessibility/AccessibilityBar.jsx';
@@ -65,10 +67,18 @@ const INTERNAL_NOTE_CATEGORIES = [
   'Atenção / Busca Ativa',
 ];
 
-function formatMin(m) {
-  const num = Number(m) || 0;
-  if (num < 60) return `${num}min`;
-  return `${Math.floor(num / 60)}h ${num % 60 > 0 ? `${num % 60}min` : ''}`.trim();
+function formatMin(m) {
+  const num = Number(m) || 0;
+  if (num < 60) return `${num}min`;
+  return `${Math.floor(num / 60)}h ${num % 60 > 0 ? `${num % 60}min` : ''}`.trim();
+}
+
+function formatFileSize(bytes) {
+  const num = Number(bytes) || 0;
+  if (num <= 0) return '0 B';
+  if (num < 1024) return `${num} B`;
+  if (num < 1024 * 1024) return `${(num / 1024).toFixed(1)} KB`;
+  return `${(num / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 export default function TeacherDashboard() {
@@ -88,6 +98,7 @@ export default function TeacherDashboard() {
   const [selectedClassId, setSelectedClassId] = useState('');
   const [studentsMetrics, setStudentsMetrics] = useState([]);
   const [contents, setContents] = useState([]);
+  const [materials, setMaterials] = useState([]);
   const [activities, setActivities] = useState([]);
   const [announcements, setAnnouncements] = useState([]);
   const [auditLogs, setAuditLogs] = useState([]);
@@ -157,12 +168,23 @@ export default function TeacherDashboard() {
   });
   const [selectedSubjectToAdd, setSelectedSubjectToAdd] = useState('');
 
-  const [contentForm, setContentForm] = useState({
+  const [contentForm, setContentForm] = useState({
+    title: '',
+    subject: 'Lógica de Programação',
+    description: '',
+    resourceUrl: '',
+  });
+
+  const [materialForm, setMaterialForm] = useState({
     title: '',
     subject: 'Lógica de Programação',
     description: '',
-    resourceUrl: '',
+    file: null,
+    url: '',
   });
+  const [uploadingMaterial, setUploadingMaterial] = useState(false);
+  const [downloadingMaterialId, setDownloadingMaterialId] = useState(null);
+  const materialFileInputRef = useRef(null);
 
   const [activityForm, setActivityForm] = useState({
     title: '',
@@ -246,6 +268,7 @@ export default function TeacherDashboard() {
     if (!user || !selectedClass) {
       setStudentsMetrics([]);
       setContents([]);
+      setMaterials([]);
       setActivities([]);
       setAnnouncements([]);
       setAuditLogs([]);
@@ -253,15 +276,17 @@ export default function TeacherDashboard() {
     }
     setLoadingClassData(true);
     try {
-      const [metrics, cnts, acts, anns, logs] = await Promise.all([
+      const [metrics, cnts, acts, anns, logs, mats] = await Promise.all([
         TeacherService.getClassStudentsAcademicProgress(user, selectedClass),
         TeacherService.getClassContents(user, selectedClass),
         TeacherService.getClassActivities(user, selectedClass),
         TeacherService.getClassAnnouncements(user, selectedClass),
         TeacherService.getClassAuditLogs(user, selectedClass.id).catch(() => []),
+        TeacherService.getClassMaterials(user, selectedClass).catch(() => []),
       ]);
       setStudentsMetrics(metrics);
       setContents(cnts);
+      setMaterials(mats);
       setActivities(acts);
       setAnnouncements(anns);
       setAuditLogs(logs);
@@ -663,14 +688,140 @@ export default function TeacherDashboard() {
     }
   };
 
-  const handleDeleteContent = async (contentId) => {
-    if (!selectedClass) return;
+  const handleDeleteContent = async (contentId) => {
+    if (!selectedClass) return;
+    try {
+      await TeacherService.deleteClassContent(user, selectedClass, contentId);
+      toast.success('Conteúdo removido.');
+      await loadSelectedClassDetails();
+    } catch (err) {
+      toast.error(err.message || 'Erro ao remover conteúdo.');
+    }
+  };
+
+  const handleMaterialFileChange = (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    if (f.type !== 'application/pdf' && !f.name.toLowerCase().endsWith('.pdf')) {
+      toast.error('Por favor, selecione um arquivo em formato PDF (.pdf).');
+      if (materialFileInputRef.current) materialFileInputRef.current.value = '';
+      return;
+    }
+    if (f.size > 15 * 1024 * 1024) {
+      toast.error('O arquivo PDF não pode ultrapassar 15 MB.');
+      if (materialFileInputRef.current) materialFileInputRef.current.value = '';
+      return;
+    }
+    setMaterialForm(prev => ({
+      ...prev,
+      file: f,
+      title: prev.title.trim() ? prev.title : f.name.replace(/\.[^/.]+$/, ''),
+    }));
+  };
+
+  const handleCreateMaterial = async (e) => {
+    e.preventDefault();
+    if (!selectedClass) {
+      toast.error('Selecione uma turma primeiro.');
+      return;
+    }
+    if (!materialForm.title.trim()) {
+      toast.error('Informe o título do material.');
+      return;
+    }
+    if (!materialForm.file && !materialForm.url.trim()) {
+      toast.error('Selecione um arquivo PDF ou informe um link de material.');
+      return;
+    }
+
+    setUploadingMaterial(true);
     try {
-      await TeacherService.deleteClassContent(user, selectedClass, contentId);
-      toast.success('Conteúdo removido.');
+      let fileBase64 = '';
+      if (materialForm.file) {
+        fileBase64 = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            const res = reader.result;
+            const idx = res.indexOf(';base64,');
+            resolve(idx !== -1 ? res.slice(idx + 8) : res);
+          };
+          reader.onerror = err => reject(err);
+          reader.readAsDataURL(materialForm.file);
+        });
+      }
+
+      await TeacherService.createClassMaterial(user, selectedClass, {
+        title: materialForm.title,
+        subject: materialForm.subject,
+        description: materialForm.description,
+        fileBase64,
+        fileName: materialForm.file ? materialForm.file.name : '',
+        fileSize: materialForm.file ? materialForm.file.size : 0,
+        fileType: materialForm.file ? (materialForm.file.type || 'application/pdf') : 'application/pdf',
+        url: materialForm.url,
+      });
+
+      toast.success('Material PDF publicado com sucesso na turma!');
+      setMaterialForm({
+        title: '',
+        subject: selectedClass.subjects?.[0] || 'Lógica de Programação',
+        description: '',
+        file: null,
+        url: '',
+      });
+      if (materialFileInputRef.current) materialFileInputRef.current.value = '';
       await loadSelectedClassDetails();
     } catch (err) {
-      toast.error(err.message || 'Erro ao remover conteúdo.');
+      toast.error(err.message || 'Erro ao publicar material PDF.');
+    } finally {
+      setUploadingMaterial(false);
+    }
+  };
+
+  const handleDeleteMaterial = async (matId) => {
+    if (!selectedClass) return;
+    if (!window.confirm('Deseja realmente remover este material da turma?')) return;
+    try {
+      await TeacherService.deleteClassMaterial(user, selectedClass, matId);
+      toast.success('Material removido.');
+      await loadSelectedClassDetails();
+    } catch (err) {
+      toast.error(err.message || 'Erro ao remover material.');
+    }
+  };
+
+  const handleDownloadMaterial = async (item) => {
+    setDownloadingMaterialId(item.id);
+    try {
+      const res = await TeacherService.downloadClassMaterial(user, selectedClass.id, item.id);
+      if (!res.base64 && !item.url) {
+        toast.error('Nenhum dado de arquivo encontrado para este material.');
+        return;
+      }
+      if (res.base64) {
+        const byteCharacters = atob(res.base64);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+          byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        const blob = new Blob([byteArray], { type: item.fileType || 'application/pdf' });
+        const blobUrl = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = blobUrl;
+        a.download = item.fileName || `${item.title}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+        toast.success('Download do PDF iniciado!');
+      } else if (item.url) {
+        window.open(item.url, '_blank');
+      }
+    } catch (err) {
+      toast.error(err.message || 'Erro ao baixar material PDF.');
+    } finally {
+      setDownloadingMaterialId(null);
     }
   };
 
@@ -823,6 +974,7 @@ export default function TeacherDashboard() {
     { id: 'overview', label: 'Acompanhamento Acadêmico', icon: <TrendingUp size={16} /> },
     { id: 'classes', label: 'Minhas Turmas & Alunos', icon: <FolderKanban size={16} /> },
     { id: 'contents', label: `Conteúdos (${contents.length})`, icon: <BookOpen size={16} /> },
+    { id: 'materials', label: `Materiais & PDFs (${materials.length})`, icon: <UploadCloud size={16} /> },
     { id: 'activities', label: `Atividades (${activities.length})`, icon: <FileText size={16} /> },
     { id: 'announcements', label: `Comunicados (${announcements.length})`, icon: <Megaphone size={16} /> },
     ...(isAdmin
@@ -1711,7 +1863,260 @@ export default function TeacherDashboard() {
         )}
 
         {/* ═══════════════════════════════════════════════════════════════════
-            ABA 4: PUBLICAÇÃO DE ATIVIDADES E AVALIAÇÕES
+            ABA 3.1: MATERIAIS & ARQUIVOS PDFS DA TURMA
+           ═══════════════════════════════════════════════════════════════════ */}
+        {activeTab === 'materials' && (
+          !selectedClass ? (
+            <div className="card" style={{ padding: 28, textAlign: 'center', color: 'var(--color-text-secondary)' }}>
+              Selecione ou crie uma turma para enviar e gerenciar materiais em PDF.
+            </div>
+          ) : (
+            <div className="grid-2" style={{ gap: 24, alignItems: 'start' }}>
+              {/* Card Formulário de Upload */}
+              <div className="card">
+                <h3 style={{ marginBottom: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <UploadCloud size={20} color="var(--color-primary)" />
+                  Enviar Arquivo PDF / Material ({selectedClass.name})
+                </h3>
+                <form onSubmit={handleCreateMaterial}>
+                  <div className="form-group">
+                    <label className="form-label">Título do Material *</label>
+                    <input
+                      className="form-input"
+                      placeholder="Ex: Apostila de Redes — Camada de Aplicação"
+                      value={materialForm.title}
+                      onChange={e => setMaterialForm(f => ({ ...f, title: e.target.value }))}
+                      disabled={uploadingMaterial}
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">Disciplina *</label>
+                    <select
+                      className="form-select"
+                      value={materialForm.subject}
+                      onChange={e => setMaterialForm(f => ({ ...f, subject: e.target.value }))}
+                      disabled={uploadingMaterial}
+                    >
+                      {SUBJECT_GROUPS.map(grp => (
+                        <optgroup key={grp.id} label={grp.shortLabel}>
+                          {grp.subjects.map(s => <option key={s} value={s}>{s}</option>)}
+                        </optgroup>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">Arquivo PDF da Aula / Material *</label>
+                    <div style={{
+                      border: '2px dashed var(--color-border)',
+                      borderRadius: 10,
+                      padding: '18px 14px',
+                      textAlign: 'center',
+                      background: materialForm.file ? 'rgba(37, 99, 235, 0.04)' : 'var(--color-bg-subtle)',
+                      transition: 'all 0.15s ease',
+                      position: 'relative',
+                    }}>
+                      <input
+                        ref={materialFileInputRef}
+                        type="file"
+                        accept="application/pdf,.pdf"
+                        onChange={handleMaterialFileChange}
+                        disabled={uploadingMaterial}
+                        style={{
+                          position: 'absolute',
+                          inset: 0,
+                          opacity: 0,
+                          cursor: uploadingMaterial ? 'not-allowed' : 'pointer',
+                          width: '100%',
+                          height: '100%',
+                        }}
+                      />
+                      {materialForm.file ? (
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+                          <FileText size={26} color="var(--color-primary)" />
+                          <div style={{ textAlign: 'left' }}>
+                            <strong style={{ fontSize: '0.9rem', display: 'block', color: 'var(--color-text)' }}>
+                              {materialForm.file.name}
+                            </strong>
+                            <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
+                              {formatFileSize(materialForm.file.size)} · Formato PDF válido
+                            </span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div>
+                          <UploadCloud size={28} color="var(--color-text-muted)" style={{ margin: '0 auto 6px' }} />
+                          <div style={{ fontSize: '0.86rem', fontWeight: 600, color: 'var(--color-text)' }}>
+                            Clique para escolher um arquivo PDF
+                          </div>
+                          <div style={{ fontSize: '0.76rem', color: 'var(--color-text-muted)', marginTop: 2 }}>
+                            Documentos de até 15 MB divididos com segurança em nuvem
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">Orientações de Estudo / Descrição (opcional)</label>
+                    <textarea
+                      className="form-textarea"
+                      rows={3}
+                      placeholder="Ex: Ler o capítulo 3 e resolver as questões das páginas 15 a 18..."
+                      value={materialForm.description}
+                      onChange={e => setMaterialForm(f => ({ ...f, description: e.target.value }))}
+                      disabled={uploadingMaterial}
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">Link Externo / Videoaula complementar (opcional)</label>
+                    <input
+                      className="form-input"
+                      placeholder="https://..."
+                      value={materialForm.url}
+                      onChange={e => setMaterialForm(f => ({ ...f, url: e.target.value }))}
+                      disabled={uploadingMaterial}
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="btn btn-primary"
+                    disabled={uploadingMaterial}
+                    style={{ width: '100%', justifyContent: 'center' }}
+                  >
+                    {uploadingMaterial ? (
+                      <>
+                        <RefreshCw size={16} className="spin" />
+                        Processando e enviando PDF para a turma...
+                      </>
+                    ) : (
+                      <>
+                        <UploadCloud size={16} /> Publicar PDF na Turma
+                      </>
+                    )}
+                  </button>
+                </form>
+              </div>
+
+              {/* Card Lista de Materiais e PDFs Publicados */}
+              <div className="card">
+                <h3 style={{ marginBottom: 14 }}>
+                  Materiais & PDFs Publicados ({materials.length})
+                </h3>
+                {materials.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '32px 16px', color: 'var(--color-text-muted)' }}>
+                    <FileText size={32} style={{ margin: '0 auto 8px', opacity: 0.5 }} />
+                    <p style={{ margin: 0, fontSize: '0.88rem' }}>
+                      Nenhum arquivo PDF enviado para esta turma ainda.
+                    </p>
+                    <p style={{ margin: '4px 0 0', fontSize: '0.78rem' }}>
+                      Envie listas de exercícios, apostilas ou textos para os estudantes da turma acessarem e baixarem.
+                    </p>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    {materials.map(item => (
+                      <div
+                        key={item.id}
+                        style={{
+                          padding: '14px 16px',
+                          borderRadius: 10,
+                          border: '1px solid var(--color-border)',
+                          background: 'var(--color-bg-subtle)',
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--color-text)' }}>
+                              {item.title}
+                            </div>
+                            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginTop: 4 }}>
+                              <span className="chip">{item.subject}</span>
+                              {item.fileName && (
+                                <span style={{
+                                  fontSize: '0.75rem',
+                                  padding: '2px 8px',
+                                  borderRadius: 6,
+                                  background: 'rgba(239, 68, 68, 0.12)',
+                                  color: 'var(--color-danger)',
+                                  fontWeight: 600,
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 4,
+                                }}>
+                                  <FileText size={11} /> PDF · {formatFileSize(item.fileSize)}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            onClick={() => handleDeleteMaterial(item.id)}
+                            style={{ color: 'var(--color-danger)' }}
+                            title="Remover este material"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+
+                        {item.description && (
+                          <p style={{ fontSize: '0.84rem', color: 'var(--color-text-secondary)', margin: '8px 0 0', whiteSpace: 'pre-wrap' }}>
+                            {item.description}
+                          </p>
+                        )}
+
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--color-border)' }}>
+                          <span style={{ fontSize: '0.74rem', color: 'var(--color-text-muted)' }}>
+                            Enviado por {item.authorName || 'Professor'} · {item.createdAt ? new Date(item.createdAt).toLocaleDateString('pt-BR') : ''}
+                          </span>
+                          <div style={{ display: 'flex', gap: 8 }}>
+                            {(item.totalChunks > 0 || item.fileName) && (
+                              <button
+                                type="button"
+                                className="btn btn-primary btn-sm"
+                                disabled={downloadingMaterialId === item.id}
+                                onClick={() => handleDownloadMaterial(item)}
+                                style={{ fontSize: '0.78rem', padding: '5px 12px' }}
+                              >
+                                {downloadingMaterialId === item.id ? (
+                                  <>
+                                    <RefreshCw size={12} className="spin" /> Baixando...
+                                  </>
+                                ) : (
+                                  <>
+                                    <Download size={13} /> Baixar / Visualizar PDF
+                                  </>
+                                )}
+                              </button>
+                            )}
+                            {item.url && (
+                              <a
+                                href={item.url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="btn btn-secondary btn-sm"
+                                style={{ fontSize: '0.78rem', padding: '5px 10px' }}
+                              >
+                                <ExternalLink size={12} /> Link Externo
+                              </a>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )
+        )}
+
+        {/* ═══════════════════════════════════════════════════════════════════
+            ABA 4: PUBLICAÇÃO DE ATIVIDADES E AVALIAÇÕES
            ═══════════════════════════════════════════════════════════════════ */}
         {activeTab === 'activities' && (
           !selectedClass ? (
