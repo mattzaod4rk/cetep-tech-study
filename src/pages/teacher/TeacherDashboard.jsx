@@ -884,6 +884,43 @@ export default function TeacherDashboard() {
     }
   };
 
+  const handleDeleteUserAccount = async (targetUser) => {
+    if (!isAdmin) {
+      toast.error('Apenas administradores podem excluir contas.');
+      return;
+    }
+    const targetUid = targetUser?.uid || targetUser?.id;
+    if (!targetUid) return;
+
+    if (targetUid === (user?.uid || user?.id)) {
+      toast.error('Você não pode excluir sua própria conta de administrador.');
+      return;
+    }
+
+    const targetName = targetUser.name || 'este usuário';
+    const targetEmail = targetUser.email ? ` (${targetUser.email})` : '';
+    const confirmMsg = `Tem certeza de que deseja excluir permanentemente o cadastro de "${targetName}"${targetEmail}?\n\nEsta ação apagará a conta do usuário, removerá todas as suas matrículas em turmas e não poderá ser desfeita.`;
+
+    if (!window.confirm(confirmMsg)) return;
+
+    try {
+      await TeacherService.deleteUserAccountByAdmin(user, targetUid);
+      toast.success(`Conta de "${targetName}" excluída com sucesso.`);
+
+      if (selectedStudentProfileUid === targetUid) {
+        handleCloseStudentProfile();
+      }
+
+      await loadInitialData();
+      if (selectedClassId) {
+        await loadSelectedClassDetails();
+      }
+    } catch (err) {
+      console.error('Erro ao excluir usuário:', err);
+      toast.error(err.message || 'Não foi possível excluir a conta do usuário.');
+    }
+  };
+
   const handleToggleTeacherInClass = async (classObj, teacherUser) => {
     const tUid = teacherUser.uid || teacherUser.id;
     const currentIds = Array.isArray(classObj.teacherIds) ? classObj.teacherIds : [];
@@ -1500,9 +1537,21 @@ export default function TeacherDashboard() {
                                 className="btn btn-ghost btn-sm"
                                 onClick={() => handleUnlinkStudent(st.uid)}
                                 style={{ color: 'var(--color-danger)' }}
+                                title="Desvincular da turma"
                               >
                                 <UserMinus size={14} /> Remover
                               </button>
+                              {isAdmin && (
+                                <button
+                                  type="button"
+                                  className="btn btn-ghost btn-sm"
+                                  onClick={() => handleDeleteUserAccount(st)}
+                                  style={{ color: 'var(--color-danger)' }}
+                                  title="Excluir cadastro do aluno da plataforma"
+                                >
+                                  <Trash2 size={14} /> Excluir
+                                </button>
+                              )}
                             </div>
                           </div>
                         ))}
@@ -2367,7 +2416,7 @@ export default function TeacherDashboard() {
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.88rem' }}>
                     <thead>
                       <tr style={{ borderBottom: '2px solid var(--color-border)' }}>
-                        {['Nome', 'E-mail', 'Perfil Atual', 'Alterar Perfil', 'Trajetória Acadêmica'].map(h => (
+                        {['Nome', 'E-mail', 'Perfil Atual', 'Alterar Perfil', 'Trajetória Acadêmica', 'Ações'].map(h => (
                           <th key={h} style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 700, color: 'var(--color-text-secondary)', fontSize: '0.75rem', textTransform: 'uppercase' }}>{h}</th>
                         ))}
                       </tr>
@@ -2407,6 +2456,20 @@ export default function TeacherDashboard() {
                               >
                                 <Eye size={14} /> Abrir Perfil
                               </button>
+                            </td>
+                            <td style={{ padding: '10px 12px' }}>
+                              {!isSelf && (
+                                <button
+                                  type="button"
+                                  className="btn btn-ghost btn-sm"
+                                  style={{ color: 'var(--color-danger)' }}
+                                  onClick={() => handleDeleteUserAccount(u)}
+                                  id={`admin-delete-user-${uid}`}
+                                  title={u.role === 'aluno' ? 'Excluir aluno' : 'Excluir conta'}
+                                >
+                                  <Trash2 size={14} /> Excluir {u.role === 'aluno' ? 'Aluno' : 'Conta'}
+                                </button>
+                              )}
                             </td>
                           </tr>
                         );
@@ -2654,6 +2717,25 @@ export default function TeacherDashboard() {
                     >
                       <RefreshCw size={14} /> Atualizar
                     </button>
+                    {isAdmin && (
+                      <button
+                        type="button"
+                        className="btn btn-sm"
+                        style={{
+                          background: 'rgba(239, 68, 68, 0.15)',
+                          color: 'var(--color-danger)',
+                          border: '1px solid rgba(239, 68, 68, 0.4)',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 6,
+                        }}
+                        onClick={() => handleDeleteUserAccount(studentProfileData.student)}
+                        id="modal-delete-student-btn"
+                        title="Excluir este aluno permanentemente da plataforma"
+                      >
+                        <Trash2 size={14} /> Excluir Aluno
+                      </button>
+                    )}
                     <button
                       type="button"
                       className="btn btn-ghost btn-sm"

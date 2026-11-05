@@ -298,6 +298,28 @@ function executeLocalClassStudentOperation(actorUser, { action, classId, queryTe
   assertStaff(actorUser);
   const callerUid = actorUser.uid || actorUser.id;
 
+  if (action === 'delete-user' || action === 'delete-student') {
+    assertAdmin(actorUser);
+    const target = String(studentUid || (studentIds && studentIds[0]) || '').trim();
+    if (!target) throw new Error('UID do usuário é obrigatório.');
+    if (target === callerUid) {
+      throw new Error('Você não pode excluir sua própria conta de administrador.');
+    }
+    const allUsers = loadLocal(LOCAL_KEYS.USERS, []);
+    saveLocal(LOCAL_KEYS.USERS, allUsers.filter(u => (u.uid || u.id) !== target));
+
+    const allClasses = loadLocal(LOCAL_KEYS.CLASSES, []);
+    saveLocal(
+      LOCAL_KEYS.CLASSES,
+      allClasses.map(c => ({
+        ...c,
+        studentIds: (Array.isArray(c.studentIds) ? c.studentIds : []).filter(id => id !== target),
+        teacherIds: (Array.isArray(c.teacherIds) ? c.teacherIds : []).filter(id => id !== target),
+      }))
+    );
+    return { ok: true, deletedUid: target };
+  }
+
   if (!classId || typeof classId !== 'string') {
     throw new Error('O identificador da turma (classId) é obrigatório.');
   }
@@ -1280,6 +1302,75 @@ export async function updateUserRoleByAdmin(adminUser, targetUid, newRole) {
   };
   await setDoc(userRef, updated);
   return updated;
+}
+
+/**
+ * Exclui permanentemente uma conta de usuário (aluno, professor ou qualquer outro) do sistema.
+ * Exclusivo para Administrador (`assertAdmin`).
+ * Um administrador NUNCA pode excluir sua própria conta de administrador.
+ * Remove o usuário de todas as turmas (`studentIds` e `teacherIds`) e exclui o documento `/users/{targetUid}`.
+ * Também tenta excluir a credencial no Firebase Auth via endpoint seguro quando disponível.
+ */
+export async function deleteUserAccountByAdmin(adminUser, targetUid) {
+  assertAdmin(adminUser);
+  if (!targetUid) throw new Error('UID do usuário é obrigatório.');
+
+  const adminUid = adminUser.uid || adminUser.id;
+  if (targetUid === adminUid) {
+    throw new Error('Você não pode excluir sua própria conta de administrador.');
+  }
+
+  // Fallback para execução local (ambiente de testes ou sem Firebase inicializado)
+  if (!db) {
+    return executeLocalClassStudentOperation(adminUser, {
+      action: 'delete-user',
+      studentUid: targetUid,
+      classId: 'global',
+    });
+  }
+
+  // Tenta acionar a função serverless com Firebase Admin SDK para remoção do Firebase Auth
+  try {
+    if (auth?.currentUser) {
+      await callClassStudentsEndpoint({
+        action: 'delete-user',
+        studentUid: targetUid,
+      });
+    }
+  } catch (apiErr) {
+    console.warn('Endpoint seguro não concluído ou indisponível, prosseguindo com exclusão no Firestore:', apiErr?.message);
+  }
+
+  // 1. Desvincular das turmas no Firestore
+  try {
+    const classesSnap = await getDocs(collection(db, 'classes'));
+    const updates = [];
+    classesSnap.forEach(classDoc => {
+      const data = classDoc.data();
+      const sIds = Array.isArray(data.studentIds) ? data.studentIds : [];
+      const tIds = Array.isArray(data.teacherIds) ? data.teacherIds : [];
+      if (sIds.includes(targetUid) || tIds.includes(targetUid)) {
+        updates.push(
+          updateDoc(doc(db, 'classes', classDoc.id), {
+            studentIds: sIds.filter(id => id !== targetUid),
+            teacherIds: tIds.filter(id => id !== targetUid),
+            updatedAt: new Date().toISOString(),
+          })
+        );
+      }
+    });
+    if (updates.length > 0) {
+      await Promise.all(updates);
+    }
+  } catch (classErr) {
+    console.warn('Erro ao atualizar turmas durante exclusão:', classErr?.message);
+  }
+
+  // 2. Excluir o documento do usuário em /users/{targetUid}
+  const userRef = doc(db, 'users', targetUid);
+  await deleteDoc(userRef);
+
+  return { ok: true, deletedUid: targetUid };
 }
 
 /**

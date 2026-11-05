@@ -876,3 +876,90 @@ test('Gestão e Envio de Materiais / Arquivos PDFs por Turma (Chunks, RBAC e Fee
   const matsAfterDel = await TS.getClassMaterials(prof1, turmaA);
   assert.equal(matsAfterDel.length, 0);
 });
+
+test('Exclusão Segura de Contas de Alunos por Administrador (RBAC, Bloqueios e Desvinculação de Turmas)', async () => {
+  const admin = { uid: 'uid-admin-excluir', name: 'Admin Master', email: 'adminmaster@cetep.ba.gov.br', role: 'admin' };
+  const prof = { uid: 'uid-prof-excluir', name: 'Professor Teste', email: 'prof@cetep.ba.gov.br', role: 'professor' };
+  const studentA = await DS.register({ name: 'Aluno Alvo Exclusão', email: 'alvo@cetep.ba.gov.br', password: '123' });
+  const studentB = await DS.register({ name: 'Aluno Permanente', email: 'permanente@cetep.ba.gov.br', password: '123' });
+
+  // Cria turma com ambos os alunos
+  const testClass = await TS.createClass(admin, {
+    name: 'Turma Exclusão Teste',
+    course: 'Informática',
+    shift: 'Matutino',
+    subjects: ['Lógica'],
+    teacherIds: [prof.uid],
+    studentIds: [studentA.id, studentB.id],
+  });
+
+  // 1. Aluno comum é BLOQUEADO ao tentar excluir qualquer conta
+  await assert.rejects(
+    () => TS.deleteUserAccountByAdmin(studentB, studentA.id),
+    /Acesso negado/
+  );
+
+  // 2. Professor é BLOQUEADO ao tentar excluir contas de alunos do sistema
+  await assert.rejects(
+    () => TS.deleteUserAccountByAdmin(prof, studentA.id),
+    /Acesso negado/
+  );
+
+  // 3. Administrador é BLOQUEADO ao tentar excluir a própria conta
+  await assert.rejects(
+    () => TS.deleteUserAccountByAdmin(admin, admin.uid),
+    /Você não pode excluir sua própria conta de administrador/
+  );
+
+  // 4. Administrador exclui studentA com sucesso
+  const deleteResult = await TS.deleteUserAccountByAdmin(admin, studentA.id);
+  assert.equal(deleteResult.ok, true);
+  assert.equal(deleteResult.deletedUid, studentA.id);
+
+  // Verifica que studentA não consta mais na lista geral de usuários
+  const remainingUsers = await TS.getAllRegisteredUsers(admin);
+  assert.equal(remainingUsers.some(u => (u.uid || u.id) === studentA.id), false);
+  assert.equal(remainingUsers.some(u => (u.uid || u.id) === studentB.id), true);
+
+  // Verifica que studentA foi removido da lista de matriculados da turma
+  const updatedClasses = await TS.getAuthorizedClasses(admin);
+  const cAfter = updatedClasses.find(c => c.id === testClass.id);
+  assert.ok(cAfter);
+  assert.equal(cAfter.studentIds.includes(studentA.id), false);
+  assert.equal(cAfter.studentIds.includes(studentB.id), true);
+
+  // 5. Verifica regra no endpoint executeSecureClassStudentOperation com action: 'delete-user'
+  let deletedInAdapter = false;
+  const mockAdapter = {
+    getUserById: async (uid) => ({ id: uid, role: uid === 'admin-caller' ? 'admin' : 'aluno' }),
+    deleteUserAccount: async (uid) => {
+      if (uid === 'target-aluno') deletedInAdapter = true;
+    },
+  };
+
+  // Aluno chamando action: delete-user é rejeitado com 403
+  await assert.rejects(
+    () => executeSecureClassStudentOperation(
+      { caller: { uid: 'student-caller', claimRole: 'aluno' }, action: 'delete-user', studentUid: 'target-aluno' },
+      mockAdapter
+    ),
+    /Acesso negado/
+  );
+
+  // Professor chamando action: delete-user é rejeitado especificamente por não ser admin
+  await assert.rejects(
+    () => executeSecureClassStudentOperation(
+      { caller: { uid: 'prof-caller', claimRole: 'professor' }, action: 'delete-user', studentUid: 'target-aluno' },
+      mockAdapter
+    ),
+    /Acesso negado: apenas administradores/
+  );
+
+  // Admin chamando action: delete-user exclui via adapter
+  const epResult = await executeSecureClassStudentOperation(
+    { caller: { uid: 'admin-caller', claimRole: 'admin' }, action: 'delete-user', studentUid: 'target-aluno' },
+    mockAdapter
+  );
+  assert.equal(epResult.ok, true);
+  assert.equal(deletedInAdapter, true);
+});

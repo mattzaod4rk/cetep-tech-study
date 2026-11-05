@@ -97,6 +97,34 @@ export async function executeSecureClassStudentOperation(
     throw err;
   }
 
+  // 2.1 Ação Especial: EXCLUIR CONTA DE USUÁRIO / ALUNO (exclusivo para administradores)
+  if (action === 'delete-user' || action === 'delete-student') {
+    if (effectiveRole !== 'admin') {
+      const err = new Error('Acesso negado: apenas administradores podem excluir contas de usuários.');
+      err.statusCode = 403;
+      throw err;
+    }
+    const resolvedTargetUid = String(studentUid || (studentIds && studentIds[0]) || '').trim();
+    if (!resolvedTargetUid) {
+      const err = new Error('UID do usuário a ser excluído é obrigatório.');
+      err.statusCode = 400;
+      throw err;
+    }
+    if (resolvedTargetUid === caller.uid) {
+      const err = new Error('Você não pode excluir sua própria conta de administrador.');
+      err.statusCode = 400;
+      throw err;
+    }
+    if (typeof adapter.deleteUserAccount === 'function') {
+      await adapter.deleteUserAccount(resolvedTargetUid);
+    }
+    return {
+      ok: true,
+      deletedUid: resolvedTargetUid,
+      action: 'delete-user',
+    };
+  }
+
   // 3. Validar turma escolhida e vínculo do professor
   if (!classId || typeof classId !== 'string') {
     const err = new Error('O identificador da turma (classId) é obrigatório.');
@@ -309,7 +337,7 @@ export async function executeSecureClassStudentOperation(
 /**
  * Cria o adaptador conectado ao Cloud Firestore via Firebase Admin SDK.
  */
-export function createFirestoreAdminAdapter(adminDb) {
+export function createFirestoreAdminAdapter(adminDb, adminAuth = null) {
   return {
     async getUserById(uid) {
       const snap = await adminDb.collection('users').doc(uid).get();
@@ -390,6 +418,32 @@ export function createFirestoreAdminAdapter(adminDb) {
         .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''))
         .slice(0, 30);
     },
+    async deleteUserAccount(targetUid) {
+      const classesSnap = await adminDb.collection('classes').get();
+      const batch = adminDb.batch();
+      classesSnap.docs.forEach(docSnap => {
+        const cData = docSnap.data();
+        const sIds = Array.isArray(cData.studentIds) ? cData.studentIds : [];
+        const tIds = Array.isArray(cData.teacherIds) ? cData.teacherIds : [];
+        if (sIds.includes(targetUid) || tIds.includes(targetUid)) {
+          batch.update(docSnap.ref, {
+            studentIds: sIds.filter(id => id !== targetUid),
+            teacherIds: tIds.filter(id => id !== targetUid),
+            updatedAt: new Date().toISOString(),
+          });
+        }
+      });
+      batch.delete(adminDb.collection('users').doc(targetUid));
+      await batch.commit();
+
+      if (adminAuth) {
+        try {
+          await adminAuth.deleteUser(targetUid);
+        } catch (authErr) {
+          console.warn('Usuário já não constava no Firebase Auth:', authErr?.message);
+        }
+      }
+    },
   };
 }
 
@@ -432,7 +486,7 @@ export default async function handler(req, res) {
       claimRole: decoded.admin === true ? 'admin' : decoded.role || null,
     };
 
-    const adapter = createFirestoreAdminAdapter(adminDb);
+    const adapter = createFirestoreAdminAdapter(adminDb, adminAuth);
     const result = await executeSecureClassStudentOperation(
       {
         caller,
@@ -440,7 +494,7 @@ export default async function handler(req, res) {
         classId: body.classId,
         query: body.query || '',
         studentIds: body.studentIds || [],
-        studentUid: body.studentUid || null,
+        studentUid: body.studentUid || body.targetUid || null,
       },
       adapter
     );
