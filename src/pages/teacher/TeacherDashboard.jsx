@@ -9,7 +9,7 @@
  * - Aluno (`role === 'aluno'`): bloqueado tanto na rota (`/teacher`) quanto nas regras de segurança do servidor.
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   LogOut,
@@ -106,6 +106,7 @@ export default function TeacherDashboard() {
   const [searchingStudents, setSearchingStudents] = useState(false);
   const [selectedStudentUids, setSelectedStudentUids] = useState([]);
   const [submittingEnrollment, setSubmittingEnrollment] = useState(false);
+  const searchDebounceRef = useRef(null);
 
   // Painel / Modal de Perfil Acadêmico Individual do Estudante
   const [selectedStudentProfileUid, setSelectedStudentProfileUid] = useState(null);
@@ -189,6 +190,20 @@ export default function TeacherDashboard() {
     if (tabId === 'admin' && !isAdmin) return;
     setActiveTab(tabId);
     setSearchParams(tabId === 'overview' ? {} : { tab: tabId });
+  };
+
+  const handleGoToManageCreateClass = () => {
+    switchTab('classes');
+    setTimeout(() => {
+      const cardEl = document.getElementById('create-class-card');
+      const inputEl = document.getElementById('new-class-name-input');
+      if (cardEl) {
+        cardEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+      if (inputEl) {
+        inputEl.focus();
+      }
+    }, 150);
   };
 
   // Carrega turmas autorizadas e (apenas para Admin) lista de contas para gestão de perfis
@@ -580,11 +595,16 @@ export default function TeacherDashboard() {
     if (!targetClassId) return;
     try {
       await TeacherService.removeStudentFromClass(user, targetClassId, studentUid);
-      toast.success('Estudante removido da turma e operação registrada.');
+      toast.success('Estudante desvinculado da turma com sucesso.');
       await loadInitialData();
       await loadSelectedClassDetails();
       if (selectedStudentProfileUid === studentUid) {
-        await loadStudentAcademicProfile(studentUid, selectedClassId);
+        try {
+          await loadStudentAcademicProfile(studentUid, selectedClassId);
+        } catch {
+          setSelectedStudentProfileUid(null);
+          setStudentProfileData(null);
+        }
       }
     } catch (err) {
       toast.error(err.message || 'Não foi possível remover o estudante da turma.');
@@ -938,7 +958,7 @@ export default function TeacherDashboard() {
               <button
                 type="button"
                 className="btn btn-primary btn-sm"
-                onClick={() => switchTab('classes')}
+                onClick={handleGoToManageCreateClass}
               >
                 <Plus size={14} /> Gerenciar / Criar Turma
               </button>
@@ -1501,12 +1521,13 @@ export default function TeacherDashboard() {
               </div>
 
               {isAdmin && (
-                <div className="card">
+                <div className="card" id="create-class-card">
                   <h3 style={{ marginBottom: 14 }}>➕ Cadastrar Nova Turma Oficial (Admin)</h3>
                   <form onSubmit={handleCreateClass}>
                     <div className="form-group">
                       <label className="form-label">Nome da Turma *</label>
                       <input
+                        id="new-class-name-input"
                         className="form-input"
                         placeholder="Ex: 2º INFO 1 - Matutino"
                         value={newClassForm.name}
@@ -3108,7 +3129,12 @@ export default function TeacherDashboard() {
                   onChange={e => {
                     const val = e.target.value;
                     setStudentSearchQuery(val);
-                    runStudentSearch(val);
+                    if (searchDebounceRef.current) {
+                      clearTimeout(searchDebounceRef.current);
+                    }
+                    searchDebounceRef.current = setTimeout(() => {
+                      runStudentSearch(val);
+                    }, 300);
                   }}
                   id="student-search-input"
                   autoFocus

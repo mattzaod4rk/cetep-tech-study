@@ -492,10 +492,9 @@ service cloud.firestore {
     // ===============================================================
 
     match /users/{userId} {
-      // Students can only get their own profile; verified teachers/admins can get individual profiles;
-      // Unrestricted collection listing is restricted strictly to Admins (teachers search students via Admin SDK endpoint)
+      // Students can only get their own profile; verified teachers and admins (isStaff()) can get individual profiles and list users
       allow get: if isOwner(userId) || isStaff();
-      allow list: if isAdmin();
+      allow list: if isStaff();
 
       // Public sign-up MUST set role == 'aluno' and empty assignedClassIds;
       // Only Admins can directly create 'professor' or 'admin' user profiles

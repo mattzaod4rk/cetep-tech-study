@@ -12,6 +12,7 @@ import {
   getDoc,
   getDocs,
   setDoc,
+  updateDoc,
   deleteDoc,
   query,
   where,
@@ -469,9 +470,9 @@ function executeLocalClassStudentOperation(actorUser, { action, classId, queryTe
 }
 
 /**
- * Pesquisa estudantes cadastrados (somente `role === 'aluno'`) via endpoint seguro
- * com Firebase Admin SDK (`/api/class-students`).
- * Retorna APENAS `{ uid, name, email, alreadyEnrolled }` — sem expor preferências AEE,
+ * Pesquisa estudantes cadastrados (somente `role === 'aluno'`).
+ * Consulta diretamente o Cloud Firestore (`/users`) respeitando o isolamento do perfil,
+ * e retorna APENAS `{ uid, name, email, alreadyEnrolled }` — sem expor preferências AEE,
  * dados pessoais sensíveis ou registros acadêmicos de alunos fora da turma.
  */
 export async function searchStudentsForClass(actorUser, classId, queryText = '') {
@@ -485,17 +486,280 @@ export async function searchStudentsForClass(actorUser, classId, queryText = '')
   }
 
   assertStaff(actorUser);
-  const res = await callClassStudentsEndpoint({
-    action: 'search',
-    classId,
-    query: queryText,
-  });
-  return res.students || [];
+
+  try {
+    const snap = await getDocs(query(collection(db, 'users'), where('role', '==', 'aluno')));
+    const classRef = doc(db, 'classes', classId);
+    const classSnap = await getDoc(classRef);
+    const enrolledSet = new Set(
+      classSnap.exists() && Array.isArray(classSnap.data().studentIds)
+        ? classSnap.data().studentIds
+        : []
+    );
+    const qNorm = normalizeSearchText(queryText);
+
+    return snap.docs
+      .map(d => {
+        const data = d.data();
+        return {
+          uid: d.id,
+          name: data.name || 'Estudante',
+          email: data.email || '',
+          alreadyEnrolled: enrolledSet.has(d.id),
+        };
+      })
+      .filter(u => {
+        if (!qNorm) return true;
+        return (
+          normalizeSearchText(u.name).includes(qNorm) ||
+          normalizeSearchText(u.email).includes(qNorm)
+        );
+      })
+      .slice(0, 40)
+      .sort((a, b) => a.name.localeCompare(b.name));
+  } catch (directErr) {
+    console.warn('[TeacherService] Consulta direta no Firestore falhou. Tentando endpoint alternativo:', directErr?.message);
+    try {
+      const res = await callClassStudentsEndpoint({
+        action: 'search',
+        classId,
+        query: queryText,
+      });
+      return res.students || [];
+    } catch {
+      return [];
+    }
+  }
 }
 
 /**
- * Adiciona um ou mais estudantes a uma turma via endpoint seguro com Firebase Admin SDK,
- * validando vínculo do professor, impedindo matrículas duplicadas e registrando auditoria.
+ * Executa matrícula de estudantes diretamente no Cloud Firestore,
+ * cumprindo integralmente as regras do Firestore (`firestore.rules`).
+ */
+async function executeDirectFirestoreEnroll(actorUser, classId, studentIds) {
+  if (!classId || typeof classId !== 'string') {
+    throw new Error('O identificador da turma (classId) é obrigatório.');
+  }
+  const rawTargets = Array.isArray(studentIds) ? studentIds : [studentIds];
+  const uniqueRequested = Array.from(new Set(rawTargets.map(x => String(x || '').trim()).filter(Boolean)));
+  if (uniqueRequested.length === 0) {
+    throw new Error('Selecione ao menos um estudante para adicionar à turma.');
+  }
+
+  const classRef = doc(db, 'classes', classId);
+  const snap = await getDoc(classRef);
+  if (!snap.exists()) throw new Error('Turma não encontrada.');
+  const classDoc = { id: snap.id, ...snap.data() };
+
+  assertCanManageClass(actorUser, classDoc);
+
+  const enrolledIds = Array.isArray(classDoc.studentIds) ? classDoc.studentIds : [];
+  const enrolledSet = new Set(enrolledIds);
+  const toAddUids = [];
+  const duplicateUids = [];
+  const addedStudentsMeta = [];
+
+  for (const targetUid of uniqueRequested) {
+    if (enrolledSet.has(targetUid)) {
+      duplicateUids.push(targetUid);
+      continue;
+    }
+
+    let targetName = 'Estudante';
+    let targetEmail = '';
+    try {
+      const uRef = doc(db, 'users', targetUid);
+      const uSnap = await getDoc(uRef);
+      if (uSnap.exists()) {
+        const uData = uSnap.data();
+        if ((uData.role || 'aluno') !== 'aluno') {
+          throw new Error('Apenas contas com perfil de aluno podem ser matriculadas como estudantes na turma.');
+        }
+        targetName = uData.name || 'Estudante';
+        targetEmail = uData.email || '';
+      }
+    } catch (e) {
+      if (e.message && e.message.includes('Apenas contas com perfil de aluno')) {
+        throw e;
+      }
+    }
+
+    enrolledSet.add(targetUid);
+    toAddUids.push(targetUid);
+    addedStudentsMeta.push({
+      uid: targetUid,
+      name: targetName,
+      email: targetEmail,
+    });
+  }
+
+  if (toAddUids.length === 0) {
+    const err = new Error(
+      duplicateUids.length === 1
+        ? 'Este estudante já está matriculado nesta turma.'
+        : 'Os estudantes selecionados já estão matriculados nesta turma.'
+    );
+    err.duplicateUids = duplicateUids;
+    throw err;
+  }
+
+  const nowISO = new Date().toISOString();
+  const updatedStudentIds = Array.from(enrolledSet);
+  const updatedClass = sanitizeClassDoc(
+    {
+      ...classDoc,
+      studentIds: updatedStudentIds,
+      updatedAt: nowISO,
+    },
+    classDoc
+  );
+  await setDoc(classRef, updatedClass);
+
+  for (const uid of toAddUids) {
+    try {
+      const uRef = doc(db, 'users', uid);
+      const uSnap = await getDoc(uRef);
+      if (uSnap.exists()) {
+        const existingEnrolled = Array.isArray(uSnap.data().enrolledClassIds) ? uSnap.data().enrolledClassIds : [];
+        const nextEnrolled = Array.from(new Set([...existingEnrolled, classId]));
+        await updateDoc(uRef, { enrolledClassIds: nextEnrolled, updatedAt: nowISO });
+      }
+    } catch (e) {
+      console.warn('[TeacherService] Falha ao atualizar enrolledClassIds do estudante:', uid, e?.message);
+    }
+  }
+
+  const logId = `log-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const callerUid = actorUser.uid || actorUser.id;
+  const auditEntry = {
+    id: logId,
+    classId,
+    className: String(classDoc.name || ''),
+    action: 'ADD_STUDENTS',
+    actorUid: callerUid,
+    actorName: String(actorUser.name || 'Docente'),
+    actorEmail: String(actorUser.email || ''),
+    actorRole: actorUser.role || 'professor',
+    addedStudentIds: toAddUids,
+    addedStudents: addedStudentsMeta,
+    skippedDuplicateIds: duplicateUids,
+    createdAt: nowISO,
+  };
+
+  try {
+    await setDoc(doc(db, 'classes', classId, 'auditLogs', logId), auditEntry);
+  } catch (e) {
+    console.warn('[TeacherService] Falha ao gravar log de auditoria no Firestore:', e?.message);
+  }
+
+  return {
+    ok: true,
+    classId,
+    studentIds: updatedStudentIds,
+    addedStudentIds: toAddUids,
+    addedStudents: addedStudentsMeta,
+    skippedDuplicateIds: duplicateUids,
+    auditLog: auditEntry,
+  };
+}
+
+/**
+ * Executa desvinculação de estudante diretamente no Cloud Firestore,
+ * cumprindo integralmente as regras do Firestore (`firestore.rules`).
+ */
+async function executeDirectFirestoreUnenroll(actorUser, classId, studentUid) {
+  if (!classId || typeof classId !== 'string') {
+    throw new Error('O identificador da turma (classId) é obrigatório.');
+  }
+  const targetUid = String(studentUid || '').trim();
+  if (!targetUid) {
+    throw new Error('Informe o estudante a ser removido da turma.');
+  }
+
+  const classRef = doc(db, 'classes', classId);
+  const snap = await getDoc(classRef);
+  if (!snap.exists()) throw new Error('Turma não encontrada.');
+  const classDoc = { id: snap.id, ...snap.data() };
+
+  assertCanManageClass(actorUser, classDoc);
+
+  const enrolledIds = Array.isArray(classDoc.studentIds) ? classDoc.studentIds : [];
+  if (!enrolledIds.includes(targetUid)) {
+    throw new Error('Este estudante não faz parte desta turma.');
+  }
+
+  const updatedStudentIds = enrolledIds.filter(id => id !== targetUid);
+  const nowISO = new Date().toISOString();
+
+  // 1. Atualizar a turma removendo o estudante da lista
+  const updatedClass = sanitizeClassDoc(
+    {
+      ...classDoc,
+      studentIds: updatedStudentIds,
+      updatedAt: nowISO,
+    },
+    classDoc
+  );
+  await setDoc(classRef, updatedClass);
+
+  // 2. Atualizar enrolledClassIds no perfil do estudante se acessível
+  let targetUserName = 'Estudante';
+  let targetUserEmail = '';
+  try {
+    const userRef = doc(db, 'users', targetUid);
+    const userSnap = await getDoc(userRef);
+    if (userSnap.exists()) {
+      const uData = userSnap.data();
+      targetUserName = uData.name || 'Estudante';
+      targetUserEmail = uData.email || '';
+      const existingEnrolled = Array.isArray(uData.enrolledClassIds) ? uData.enrolledClassIds : [];
+      if (existingEnrolled.includes(classId)) {
+        await updateDoc(userRef, {
+          enrolledClassIds: existingEnrolled.filter(id => id !== classId),
+          updatedAt: nowISO,
+        });
+      }
+    }
+  } catch (uErr) {
+    console.warn('[TeacherService] Aviso ao desvincular enrolledClassIds do estudante:', uErr?.message);
+  }
+
+  // 3. Registrar auditoria na subcoleção da turma
+  const logId = `log-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const callerUid = actorUser.uid || actorUser.id;
+  const auditEntry = {
+    id: logId,
+    classId,
+    className: String(classDoc.name || ''),
+    action: 'REMOVE_STUDENT',
+    actorUid: callerUid,
+    actorName: String(actorUser.name || 'Docente'),
+    actorEmail: String(actorUser.email || ''),
+    actorRole: actorUser.role || 'professor',
+    removedStudentId: targetUid,
+    removedStudentName: targetUserName,
+    removedStudentEmail: targetUserEmail,
+    createdAt: nowISO,
+  };
+
+  try {
+    await setDoc(doc(db, 'classes', classId, 'auditLogs', logId), auditEntry);
+  } catch (auditErr) {
+    console.warn('[TeacherService] Aviso ao registrar log de auditoria no Firestore:', auditErr?.message);
+  }
+
+  return {
+    ok: true,
+    classId,
+    studentIds: updatedStudentIds,
+    removedStudentId: targetUid,
+    auditLog: auditEntry,
+  };
+}
+
+/**
+ * Adiciona um ou mais estudantes a uma turma via Firestore, validando vínculo do professor,
+ * impedindo matrículas duplicadas e registrando auditoria.
  */
 export async function addStudentsToClass(actorUser, classId, studentIds) {
   const ids = Array.isArray(studentIds) ? studentIds : [studentIds];
@@ -508,16 +772,12 @@ export async function addStudentsToClass(actorUser, classId, studentIds) {
   }
 
   assertStaff(actorUser);
-  return callClassStudentsEndpoint({
-    action: 'enroll',
-    classId,
-    studentIds: ids,
-  });
+  return executeDirectFirestoreEnroll(actorUser, classId, ids);
 }
 
 /**
- * Remove um estudante vinculado de uma turma via endpoint seguro com Firebase Admin SDK
- * e registra a operação e sua autoria no log de auditoria da turma.
+ * Remove um estudante vinculado de uma turma via Firestore e registra a operação
+ * no log de auditoria da turma.
  */
 export async function removeStudentFromClass(actorUser, classId, studentUid) {
   if (!db) {
@@ -529,11 +789,7 @@ export async function removeStudentFromClass(actorUser, classId, studentUid) {
   }
 
   assertStaff(actorUser);
-  return callClassStudentsEndpoint({
-    action: 'unenroll',
-    classId,
-    studentUid,
-  });
+  return executeDirectFirestoreUnenroll(actorUser, classId, studentUid);
 }
 
 /**
@@ -549,11 +805,15 @@ export async function getClassAuditLogs(actorUser, classId) {
   }
 
   assertStaff(actorUser);
-  const res = await callClassStudentsEndpoint({
-    action: 'auditLogs',
-    classId,
-  });
-  return res.logs || [];
+  try {
+    const snap = await getDocs(collection(db, 'classes', classId, 'auditLogs'));
+    return snap.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''))
+      .slice(0, 30);
+  } catch {
+    return [];
+  }
 }
 
 /**
